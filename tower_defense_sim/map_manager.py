@@ -1,7 +1,9 @@
+import math
+
 class MapManager:
     """
     Manages the 2D grid for the Tower Defense simulation.
-    Tracks start/goal nodes, tower locations, and provides helpers for pathfinding queries.
+    Tracks start/goal nodes, tower types and locations, and provides helpers for pathfinding queries.
     """
     def __init__(self, width=20, height=20):
         self.width = width
@@ -11,16 +13,16 @@ class MapManager:
         self.start = (0, 0)
         self.goal = (width - 1, height - 1)
         
-        # Set of tower positions: set of (x, y) tuples
-        self.towers = set()
+        # Dictionary mapping tower position (x, y) -> tower_type ("Basic", "Ice", "Fire")
+        self.towers = {}
 
     def is_valid_coord(self, x, y):
         """Checks if the coordinate is within grid boundaries."""
         return 0 <= x < self.width and 0 <= y < self.height
 
-    def add_tower(self, x, y):
+    def add_tower(self, x, y, tower_type="Basic"):
         """
-        Adds a tower at (x, y). Towers act as obstacles.
+        Adds a tower at (x, y) with a specific type. Towers act as obstacles.
         Cannot add a tower on the start or goal node.
         Returns True if the tower was successfully added, False otherwise.
         """
@@ -29,7 +31,15 @@ class MapManager:
         if (x, y) == self.start or (x, y) == self.goal:
             return False
         
-        self.towers.add((x, y))
+        # Normalise tower type string
+        if "Ice" in tower_type:
+            t_type = "Ice"
+        elif "Fire" in tower_type:
+            t_type = "Fire"
+        else:
+            t_type = "Basic"
+            
+        self.towers[(x, y)] = t_type
         return True
 
     def remove_tower(self, x, y):
@@ -38,7 +48,7 @@ class MapManager:
         Returns True if a tower was removed, False otherwise.
         """
         if (x, y) in self.towers:
-            self.towers.remove((x, y))
+            del self.towers[(x, y)]
             return True
         return False
 
@@ -67,3 +77,39 @@ class MapManager:
     def reset(self):
         """Clears all towers from the grid."""
         self.towers.clear()
+
+    def get_tower_at(self, x, y):
+        """Returns the type of tower at (x, y), or None if no tower exists."""
+        return self.towers.get((x, y))
+
+    def get_expected_damage(self, x, y):
+        """
+        Calculates the expected damage of cell (x, y) based on towers in range.
+        - Basic: range 3.0, expected damage 10
+        - Fire: range 4.0, expected damage 18 (10 * 0.6 + 30 * 0.4)
+        - Ice: range 2.0, expected damage 9.5 (5 * 0.7 + 20 * 0.3)
+        """
+        expected_damage = 0.0
+        for (tx, ty), t_type in self.towers.items():
+            dist = math.sqrt((tx - x)**2 + (ty - y)**2)
+            if t_type == "Basic" and dist <= 3.0:
+                expected_damage += 10.0
+            elif t_type == "Fire" and dist <= 4.0:
+                expected_damage += 18.0
+            elif t_type == "Ice" and dist <= 2.0:
+                expected_damage += 9.5
+        return expected_damage
+
+    def get_freeze_probability(self, x, y):
+        """
+        Calculates the probability of being frozen at cell (x, y).
+        If at least one Ice tower has (x, y) in range (dist <= 2.0),
+        probability is 0.3.
+        """
+        for (tx, ty), t_type in self.towers.items():
+            if t_type == "Ice":
+                dist = math.sqrt((tx - x)**2 + (ty - y)**2)
+                if dist <= 2.0:
+                    return 0.3
+        return 0.0
+

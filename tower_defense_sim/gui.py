@@ -87,9 +87,16 @@ class TowerDefenseGUI:
         # Alg dropdown
         tk.Label(ctrl_frame, text="Thuật toán tìm đường:", bg="#1e293b", fg="#94a3b8", font=("Segoe UI", 9, "bold")).pack(anchor=tk.W, padx=15, pady=(5, 0))
         self.alg_var = tk.StringVar(value="A*")
-        self.alg_combo = ttk.Combobox(ctrl_frame, textvariable=self.alg_var, values=["A*", "Dijkstra", "Incremental A*", "D*"], state="readonly")
-        self.alg_combo.pack(fill=tk.X, padx=15, pady=(2, 10))
+        self.alg_combo = ttk.Combobox(ctrl_frame, textvariable=self.alg_var, 
+                                       values=["A*", "Dijkstra", "BFS", "Greedy Best-First", "Incremental A*", "D*", "Backtracking (DFS)", "Expectimax", "AND-OR Search"], 
+                                       state="readonly")
+        self.alg_combo.pack(fill=tk.X, padx=15, pady=(2, 5))
         self.alg_combo.bind("<<ComboboxSelected>>", self.on_algorithm_change)
+        
+        # Category info text for clarity
+        cat_info = "🔍 NHÓM THUẬT TOÁN:\n• Tìm đường: A*, Dijkstra, BFS, Greedy\n• AI Xác suất: Expectimax, AND-OR"
+        cat_lbl = tk.Label(ctrl_frame, text=cat_info, bg="#1e293b", fg="#94a3b8", font=("Segoe UI", 8), justify=tk.LEFT)
+        cat_lbl.pack(fill=tk.X, padx=15, pady=(0, 10))
         
         # Tower type dropdown
         tk.Label(ctrl_frame, text="Loại trụ phòng thủ:", bg="#1e293b", fg="#94a3b8", font=("Segoe UI", 9, "bold")).pack(anchor=tk.W, padx=15, pady=(5, 0))
@@ -105,16 +112,22 @@ class TowerDefenseGUI:
         
         # Buttons
         self.btn_find = self.create_styled_button(ctrl_frame, "Tìm Đường Lại", self.start_pathfinding_thread, "#3b82f6", "#2563eb")
-        self.btn_find.pack(fill=tk.X, padx=15, pady=5)
+        self.btn_find.pack(fill=tk.X, padx=15, pady=3)
+        
+        self.btn_all_paths = self.create_styled_button(ctrl_frame, "Tìm Mọi Đường Đi (DFS)", self.start_all_paths_thread, "#06b6d4", "#0891b2")
+        self.btn_all_paths.pack(fill=tk.X, padx=15, pady=3)
         
         self.btn_simulate = self.create_styled_button(ctrl_frame, "Bắt Đầu Mô Phỏng", self.start_enemy_simulation, "#10b981", "#059669")
-        self.btn_simulate.pack(fill=tk.X, padx=15, pady=5)
+        self.btn_simulate.pack(fill=tk.X, padx=15, pady=3)
+        
+        self.btn_sa = self.create_styled_button(ctrl_frame, "Tự Động Xếp Trụ (SA)", self.start_sa_thread, "#8b5cf6", "#7c3aed")
+        self.btn_sa.pack(fill=tk.X, padx=15, pady=3)
         
         self.btn_reset = self.create_styled_button(ctrl_frame, "Reset Lưới", self.reset_grid, "#ef4444", "#dc2626")
-        self.btn_reset.pack(fill=tk.X, padx=15, pady=5)
+        self.btn_reset.pack(fill=tk.X, padx=15, pady=3)
         
         self.btn_clear_path = self.create_styled_button(ctrl_frame, "Xóa Tìm Kiếm", self.clear_search_visuals, "#475569", "#334155")
-        self.btn_clear_path.pack(fill=tk.X, padx=15, pady=5)
+        self.btn_clear_path.pack(fill=tk.X, padx=15, pady=3)
         
         # Quick guide
         guide_text = "💡 Hướng dẫn:\n• Click trái: Đặt trụ\n• Kéo trái: Vẽ nhanh trụ\n• Click/Kéo phải: Xóa trụ\n• Bắt đầu tìm đường trước khi chạy mô phỏng."
@@ -211,12 +224,16 @@ class TowerDefenseGUI:
                     color = "#ef4444"  # Rose Red
                     text = "G"
                 elif self.map_manager.is_obstacle(x, y):
-                    # Find color based on custom property or draw standard
-                    # In this grid, we store towers in set.
-                    # We can store tower types or just map them to purple for now.
-                    # Let's check if we have custom types. We will dynamically assign color based on grid state
-                    color = "#8b5cf6"  # default Basic
-                    text = ""
+                    t_type = self.map_manager.get_tower_at(x, y) or "Basic"
+                    if t_type == "Ice":
+                        color = "#06b6d4"  # Cyan
+                        text = "I"
+                    elif t_type == "Fire":
+                        color = "#f97316"  # Orange
+                        text = "F"
+                    else:
+                        color = "#8b5cf6"  # Purple/Indigo
+                        text = "B"
                 elif coord in self.current_path:
                     color = "#f59e0b"  # Golden/Yellow for path
                     text = ""
@@ -257,7 +274,9 @@ class TowerDefenseGUI:
             ecx = ex * self.cell_size + self.cell_size // 2
             ecy = ey * self.cell_size + self.cell_size // 2
             r = 7
-            self.enemy_id = self.canvas.create_oval(ecx - r, ecy - r, ecx + r, ecy + r, fill="#ef4444", outline="#ffffff", width=2)
+            is_slowed = getattr(self, "enemy_slowed", False)
+            enemy_color = "#06b6d4" if is_slowed else "#ef4444"
+            self.enemy_id = self.canvas.create_oval(ecx - r, ecy - r, ecx + r, ecy + r, fill=enemy_color, outline="#ffffff", width=2)
 
     def on_algorithm_change(self, event):
         """Callback when pathfinding algorithm is changed from dropdown."""
@@ -278,8 +297,8 @@ class TowerDefenseGUI:
     def on_canvas_left_click(self, event):
         """Places a tower on left click."""
         x, y = self.get_cell_coord(event)
-        if self.map_manager.add_tower(x, y):
-            tower_type = self.tower_var.get()
+        tower_type = self.tower_var.get()
+        if self.map_manager.add_tower(x, y, tower_type):
             self.write_to_log(f"Đặt {tower_type} tại ô ({x}, {y})\n")
             self.redraw_grid()
             
@@ -290,7 +309,8 @@ class TowerDefenseGUI:
     def on_canvas_left_drag(self, event):
         """Draws towers continuously on click & drag."""
         x, y = self.get_cell_coord(event)
-        if self.map_manager.add_tower(x, y):
+        tower_type = self.tower_var.get()
+        if self.map_manager.add_tower(x, y, tower_type):
             self.redraw_grid()
             
             # Dynamic Re-planning during simulation
@@ -339,9 +359,7 @@ class TowerDefenseGUI:
         self.log_area.config(state=tk.DISABLED)
         
         # Spawn thread
-        self.btn_find.config(state=tk.DISABLED)
-        self.btn_simulate.config(state=tk.DISABLED)
-        self.btn_reset.config(state=tk.DISABLED)
+        self.set_buttons_state(tk.DISABLED)
         
         threading.Thread(target=self.run_pathfinder_bg, daemon=True).start()
 
@@ -354,6 +372,75 @@ class TowerDefenseGUI:
             self.ui_queue.put(('path_completed', path))
         except Exception as e:
             self.ui_queue.put(('error', str(e)))
+
+    def start_sa_thread(self):
+        """Spawns background thread to run Simulated Annealing layout optimization."""
+        if self.is_simulating:
+            self.write_to_log("⚠️ Vui lòng chờ mô phỏng kẻ địch chạy xong!\n")
+            return
+            
+        self.clear_search_visuals()
+        self.set_led_color("#f59e0b")
+        self.status_lbl.config(text="Trạng thái: Đang chạy Simulated Annealing...")
+        
+        # Clear log area
+        self.log_area.config(state=tk.NORMAL)
+        self.log_area.delete("1.0", tk.END)
+        self.log_area.config(state=tk.DISABLED)
+        
+        self.set_buttons_state(tk.DISABLED)
+        
+        def run_sa_bg():
+            from algorithms import simulated_annealing
+            import path_step_monitor
+            try:
+                path_step_monitor.set_silenced(True)
+                simulated_annealing.run_annealing(
+                    self.map_manager,
+                    num_towers=18,
+                    steps=80,
+                    update_ui_callback=lambda: self.ui_queue.put(('map_update', None)),
+                    log_callback=lambda text: self.ui_queue.put(('log', text))
+                )
+                self.ui_queue.put(('sa_completed', None))
+            except Exception as e:
+                self.ui_queue.put(('error', str(e)))
+            finally:
+                path_step_monitor.set_silenced(False)
+                
+        threading.Thread(target=run_sa_bg, daemon=True).start()
+
+    def start_all_paths_thread(self):
+        """Spawns background thread to count all simple paths using Backtracking DFS."""
+        if self.is_simulating:
+            self.write_to_log("⚠️ Vui lòng chờ mô phỏng kẻ địch chạy xong!\n")
+            return
+            
+        self.clear_search_visuals()
+        self.set_led_color("#f59e0b")
+        self.status_lbl.config(text="Trạng thái: Đang quét tất cả đường đi...")
+        
+        # Clear log area
+        self.log_area.config(state=tk.NORMAL)
+        self.log_area.delete("1.0", tk.END)
+        self.log_area.config(state=tk.DISABLED)
+        
+        self.set_buttons_state(tk.DISABLED)
+        
+        def run_all_paths_bg():
+            from algorithms import backtracking
+            try:
+                paths = backtracking.solve_all_paths(
+                    self.map_manager.start,
+                    self.map_manager.goal,
+                    self.map_manager,
+                    max_steps=2000
+                )
+                self.ui_queue.put(('all_paths_completed', paths))
+            except Exception as e:
+                self.ui_queue.put(('error', str(e)))
+                
+        threading.Thread(target=run_all_paths_bg, daemon=True).start()
 
     def replan_during_movement(self):
         """
@@ -400,6 +487,14 @@ class TowerDefenseGUI:
             
             self.redraw_grid()
 
+    def set_buttons_state(self, state):
+        """Enables or disables all control buttons at once."""
+        self.btn_find.config(state=state)
+        self.btn_simulate.config(state=state)
+        self.btn_reset.config(state=state)
+        self.btn_sa.config(state=state)
+        self.btn_all_paths.config(state=state)
+
     def start_enemy_simulation(self):
         """Starts the enemy movement along the current_path."""
         if not self.current_path:
@@ -417,12 +512,15 @@ class TowerDefenseGUI:
         start_x, start_y = self.current_path[0]
         self.enemy_pos = (float(start_x), float(start_y))
         
-        self.btn_find.config(state=tk.DISABLED)
-        self.btn_simulate.config(state=tk.DISABLED)
-        self.btn_reset.config(state=tk.DISABLED)
+        # Initialize enemy simulation variables
+        self.enemy_hp = 100.0
+        self.enemy_slowed = False
+        self.enemy_strategy = getattr(self.map_manager, "last_and_or_strategy", {})
+        
+        self.set_buttons_state(tk.DISABLED)
         
         self.write_to_log("\n--- Bắt đầu mô phỏng di chuyển kẻ địch ---\n")
-        self.status_lbl.config(text="Trạng thái: Kẻ địch đang di chuyển...")
+        self.status_lbl.config(text="Trạng thái: Kẻ địch đang di chuyển... HP: 100.0/100")
         self.set_led_color("#3b82f6")  # Blue for running simulation
         
         # Launch animation loop
@@ -430,6 +528,7 @@ class TowerDefenseGUI:
 
     def run_animation_step(self):
         """Smoothly interpolates enemy position between coordinates using Tkinter after loop."""
+        import math
         if not self.is_simulating:
             return
             
@@ -437,13 +536,11 @@ class TowerDefenseGUI:
             # Destination reached!
             self.is_simulating = False
             self.write_to_log("🎉 Kẻ địch đã đến điểm đích thành công!\n")
-            self.status_lbl.config(text="Trạng thái: Kẻ địch đã về đích!")
+            self.status_lbl.config(text=f"Trạng thái: Về đích thành công! HP còn lại: {self.enemy_hp:.1f}")
             self.set_led_color("#10b981")
             
             # Re-enable controls
-            self.btn_find.config(state=tk.NORMAL)
-            self.btn_simulate.config(state=tk.NORMAL)
-            self.btn_reset.config(state=tk.NORMAL)
+            self.set_buttons_state(tk.NORMAL)
             return
 
         # Check if next step is blocked (dynamic block during animation frame)
@@ -459,29 +556,94 @@ class TowerDefenseGUI:
                 self.write_to_log("🛑 Kẻ địch dừng lại do đường đi bị chặn.\n")
                 self.status_lbl.config(text="Trạng thái: Bị chặn!")
                 self.set_led_color("#ef4444")
-                self.btn_find.config(state=tk.NORMAL)
-                self.btn_simulate.config(state=tk.NORMAL)
-                self.btn_reset.config(state=tk.NORMAL)
+                self.set_buttons_state(tk.NORMAL)
                 return
 
-        # Smooth interpolation: we move from current cell to next cell in 5 frames
-        # Each frame advances position by 0.20
+        # Smooth interpolation: we move from current cell to next cell
+        # Step size is halved when enemy is slowed/frozen
         ex, ey = self.enemy_pos
         dest_x, dest_y = float(next_x), float(next_y)
         
-        # Calculate steps
         dx = dest_x - ex
         dy = dest_y - ey
         
-        # If close to destination cell, snap to it and move to next node index
         dist_sq = dx*dx + dy*dy
         if dist_sq < 0.04:
             self.enemy_pos = (dest_x, dest_y)
             self.enemy_path_index += 1
+            
+            # Resolve tower attacks on entering new cell
+            cx, cy = int(dest_x), int(dest_y)
+            alg_name = self.alg_var.get()
+            
+            if alg_name in ["Expectimax", "AND-OR Search"]:
+                import random
+                total_damage = 0.0
+                frozen_by_tower = False
+                
+                for (tx, ty), t_type in self.map_manager.towers.items():
+                    dist = math.sqrt((tx - cx)**2 + (ty - cy)**2)
+                    if t_type == "Basic" and dist <= 3.0:
+                        total_damage += 10.0
+                        self.write_to_log(f"💥 Tháp Basic tại ({tx},{ty}) bắn: 10 sát thương!\n")
+                    elif t_type == "Fire" and dist <= 4.0:
+                        if random.random() < 0.40:
+                            total_damage += 30.0
+                            self.write_to_log(f"💥 Tháp Fire tại ({tx},{ty}) CHÍ MẠNG: 30 sát thương!\n")
+                        else:
+                            total_damage += 10.0
+                            self.write_to_log(f"🔫 Tháp Fire tại ({tx},{ty}) bắn: 10 sát thương.\n")
+                    elif t_type == "Ice" and dist <= 2.0:
+                        if random.random() < 0.30:
+                            total_damage += 20.0
+                            frozen_by_tower = True
+                            self.write_to_log(f"❄️ Tháp Ice tại ({tx},{ty}) ĐÓNG BĂNG: 20 sát thương + làm chậm!\n")
+                        else:
+                            total_damage += 5.0
+                            self.write_to_log(f"🔫 Tháp Ice tại ({tx},{ty}) bắn: 5 sát thương.\n")
+                            
+                if total_damage > 0:
+                    self.enemy_hp -= total_damage
+                    if self.enemy_hp < 0:
+                        self.enemy_hp = 0.0
+                    self.write_to_log(f"❤️ Máu còn lại: {self.enemy_hp:.1f}/100\n")
+                    
+                if self.enemy_hp <= 0:
+                    self.is_simulating = False
+                    self.enemy_pos = (dest_x, dest_y)
+                    self.redraw_grid()
+                    self.write_to_log("💀 Kẻ địch đã bị tiêu diệt giữa đường do hết máu!\n")
+                    self.status_lbl.config(text="Trạng thái: Bị tiêu diệt!")
+                    self.set_led_color("#ef4444")
+                    self.set_buttons_state(tk.NORMAL)
+                    return
+                    
+                # Update slow state
+                self.enemy_slowed = frozen_by_tower
+                self.status_lbl.config(text=f"Trạng thái: Kẻ địch đang di chuyển... HP: {self.enemy_hp:.1f}/100")
+                
+                # AND-OR Search dynamic path rerouting
+                if alg_name == "AND-OR Search" and self.enemy_path_index < len(self.current_path):
+                    status = "slowed" if self.enemy_slowed else "normal"
+                    next_step = self.enemy_strategy.get((cx, cy, status))
+                    
+                    if next_step and next_step != self.current_path[self.enemy_path_index]:
+                        self.write_to_log(f"🔀 Nhánh rẽ chiến lược AND-OR: ({cx}, {cy}) -> {next_step} [Trạng thái: {status}]\n")
+                        
+                        completed = self.current_path[:self.enemy_path_index]
+                        path_suffix = [next_step]
+                        curr_node = next_step
+                        visited_suffix = {next_step}
+                        while curr_node != self.map_manager.goal:
+                            nxt = self.enemy_strategy.get((curr_node[0], curr_node[1], "normal"))
+                            if not nxt or nxt in visited_suffix:
+                                break
+                            path_suffix.append(nxt)
+                            visited_suffix.add(nxt)
+                            curr_node = nxt
+                        self.current_path = completed + path_suffix
         else:
-            # Take small step towards destination (speed factor ~0.2 per frame)
-            # Adjust speed based on delay scale (a larger delay scale means slower animation)
-            step_size = 0.2
+            step_size = 0.1 if self.enemy_slowed else 0.2
             self.enemy_pos = (ex + dx * step_size, ey + dy * step_size)
             
         self.redraw_grid()
@@ -557,10 +719,7 @@ class TowerDefenseGUI:
                 
             elif item_type == 'path_completed':
                 path = data
-                # Re-enable controls
-                self.btn_find.config(state=tk.NORMAL)
-                self.btn_simulate.config(state=tk.NORMAL)
-                self.btn_reset.config(state=tk.NORMAL)
+                self.set_buttons_state(tk.NORMAL)
                 
                 if path:
                     self.current_path = path
@@ -573,11 +732,35 @@ class TowerDefenseGUI:
                     
                 self.redraw_grid()
                 
+            elif item_type == 'map_update':
+                self.redraw_grid()
+                
+            elif item_type == 'sa_completed':
+                self.set_buttons_state(tk.NORMAL)
+                self.write_to_log("✅ Đã tạo mê cung bằng Simulated Annealing xong!\n")
+                self.status_lbl.config(text="Trạng thái: Hoàn tất Simulated Annealing")
+                self.set_led_color("#10b981")
+                self.redraw_grid()
+                
+            elif item_type == 'all_paths_completed':
+                all_paths = data
+                self.set_buttons_state(tk.NORMAL)
+                self.set_led_color("#10b981")
+                
+                if all_paths:
+                    self.write_to_log(f"✅ Tìm thấy tất cả {len(all_paths)} đường đi bằng Backtracking DFS.\n")
+                    self.status_lbl.config(text=f"Trạng thái: DFS tìm thấy {len(all_paths)} đường đi.")
+                    # Show the first found path as current active path
+                    self.current_path = all_paths[0]
+                else:
+                    self.write_to_log("❌ Không tìm thấy đường đi khả thi nào!\n")
+                    self.status_lbl.config(text="Trạng thái: Không tìm thấy đường đi.")
+                    self.current_path = []
+                self.redraw_grid()
+                
             elif item_type == 'error':
                 err_msg = data
-                self.btn_find.config(state=tk.NORMAL)
-                self.btn_simulate.config(state=tk.NORMAL)
-                self.btn_reset.config(state=tk.NORMAL)
+                self.set_buttons_state(tk.NORMAL)
                 
                 self.write_to_log(f"💥 Lỗi hệ thống: {err_msg}\n")
                 self.status_lbl.config(text="Trạng thái: Xảy ra lỗi!")

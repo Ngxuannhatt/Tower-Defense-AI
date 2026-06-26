@@ -21,7 +21,7 @@ def run_tests():
     
     pathfinder = Pathfinder(map_manager)
     
-    algorithms = ["A*", "Dijkstra", "Incremental A*", "D*"]
+    algorithms = ["A*", "Dijkstra", "Incremental A*", "D*", "BFS", "Greedy Best-First", "Backtracking (DFS)", "Expectimax", "AND-OR Search"]
     
     for alg in algorithms:
         print(f"\n--- Testing Algorithm: {alg} ---")
@@ -54,6 +54,14 @@ def run_tests():
         assert path is None or len(path) == 0, f"Failed: {alg} claimed to find a path through a blocked goal"
         print(f"  [PASS] Blocked goal detection (No path).")
         
+    # Test Case 4: Simulated Annealing layout generation
+    print("\n--- Testing Simulated Annealing Map Optimizer ---")
+    from algorithms import simulated_annealing
+    map_manager.reset()
+    simulated_annealing.run_annealing(map_manager, num_towers=8, steps=10, update_ui_callback=None, log_callback=None)
+    assert len(map_manager.towers) > 0, "Failed: Simulated Annealing did not place any towers"
+    print("  [PASS] Simulated Annealing placed towers successfully.")
+    
     print("\n========================================")
     print("ALL PATHFINDING ALGORITHMS PASSED TESTS!")
     print("========================================")

@@ -6,7 +6,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.append(current_dir)
 
-from algorithms import astar, dijkstra, incremental_astar, dstar
+from algorithms import astar, dijkstra, incremental_astar, dstar, bfs, greedy_best_first, backtracking, expectimax, and_or
 
 class Pathfinder:
     """
@@ -19,7 +19,7 @@ class Pathfinder:
         self.delay = 0.0  # delay in seconds between exploration steps
 
     def set_algorithm(self, algorithm_name):
-        """Sets the active algorithm (A*, Dijkstra, Incremental A*, D*)."""
+        """Sets the active algorithm (A*, Dijkstra, Incremental A*, D*, BFS, Greedy, Backtracking, Expectimax, AND-OR)."""
         self.current_algorithm = algorithm_name
 
     def set_delay(self, delay_seconds):
@@ -54,6 +54,21 @@ class Pathfinder:
         elif self.current_algorithm == "D*":
             # Pass grid, delay, and force_init to the D* Lite solver
             return dstar.solve(start, goal, self.map_manager, delay=self.delay, force_init=force_init)
+            
+        elif self.current_algorithm == "BFS":
+            return bfs.solve(start, goal, self.map_manager, delay=self.delay)
+            
+        elif self.current_algorithm == "Greedy Best-First":
+            return greedy_best_first.solve(start, goal, self.map_manager, delay=self.delay)
+            
+        elif self.current_algorithm == "Backtracking (DFS)":
+            return backtracking.solve(start, goal, self.map_manager, delay=self.delay)
+            
+        elif self.current_algorithm == "Expectimax":
+            return expectimax.solve(start, goal, self.map_manager, delay=self.delay)
+            
+        elif self.current_algorithm == "AND-OR Search":
+            return and_or.solve(start, goal, self.map_manager, delay=self.delay)
             
         else:
             raise ValueError(f"Thuật toán không hợp lệ: {self.current_algorithm}")

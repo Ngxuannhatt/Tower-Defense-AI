@@ -4,6 +4,16 @@ import sys
 
 _log_callbacks = []
 _node_callbacks = []
+_is_silenced = False
+
+def set_silenced(silenced):
+    """Mutes or unmutes all logging and node callbacks."""
+    global _is_silenced
+    _is_silenced = silenced
+
+def is_silenced():
+    """Returns True if callbacks are currently muted."""
+    return _is_silenced
 
 def register_log_callback(callback):
     """Registers a callback function to receive text log updates."""
@@ -20,12 +30,16 @@ def clear_callbacks():
     global _log_callbacks, _node_callbacks
     _log_callbacks = []
     _node_callbacks = []
+    global _is_silenced
+    _is_silenced = False
 
 def log_step(step_description):
     """
     Broadcasts a step description string to all registered log callbacks.
     Also prints to console for debugging.
     """
+    if _is_silenced:
+        return
     try:
         print(f"[PATHFINDER] {step_description}")
     except UnicodeEncodeError:
@@ -51,6 +65,8 @@ def log_node_state(x, y, state):
     Broadcasts a cell's state update to all registered node callbacks.
     States can be 'open', 'closed', 'current', 'path', 'reset'.
     """
+    if _is_silenced:
+        return
     for callback in _node_callbacks:
         try:
             callback(x, y, state)
