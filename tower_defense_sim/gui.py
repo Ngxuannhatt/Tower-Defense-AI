@@ -4,7 +4,34 @@ import tkinter.scrolledtext as st
 import threading
 import queue
 import time
+import os
 import path_step_monitor
+
+def rotate_photo_image(src_img, angle):
+    """
+    Rotates a tk.PhotoImage by 90, 180, or 270 degrees clockwise.
+    Returns a new tk.PhotoImage.
+    """
+    w = src_img.width()
+    h = src_img.height()
+    dst_img = tk.PhotoImage(width=w, height=h)
+    for y in range(h):
+        for x in range(w):
+            if angle == 90:
+                nx, ny = w - 1 - y, x
+            elif angle == 180:
+                nx, ny = w - 1 - x, h - 1 - y
+            elif angle == 270:
+                nx, ny = y, h - 1 - x
+            else:
+                nx, ny = x, y
+                
+            if src_img.transparency_get(x, y):
+                dst_img.transparency_set(nx, ny, True)
+            else:
+                r, g, b = src_img.get(x, y)
+                dst_img.put(f"#{r:02x}{g:02x}{b:02x}", to=(nx, ny))
+    return dst_img
 
 class TowerDefenseGUI:
     def __init__(self, root, map_manager, pathfinder):
@@ -14,7 +41,7 @@ class TowerDefenseGUI:
         
         # Configure root window
         self.root.title("Tower Defense Pathfinding Simulator")
-        self.root.geometry("1100x650")
+        self.root.geometry("1240x720")
         self.root.configure(bg="#0f172a")  # Slate 900
         
         # UI Queue for thread-safe updates
@@ -23,6 +50,9 @@ class TowerDefenseGUI:
         # Grid visual state cache (tracks node state colors to keep search artifacts)
         # 0: empty, 1: open, 2: closed, 3: path
         self.search_node_states = {}
+        self.tower_turret_angles = {}
+        self.active_lasers = []
+        self.enemy_angle = 0
         
         # Active path lists
         self.current_path = []
@@ -33,6 +63,9 @@ class TowerDefenseGUI:
         self.enemy_path_index = 0
         self.is_simulating = False
         self.simulation_thread = None
+        
+        # Setup assets
+        self.load_assets()
         
         # Setup modern dark style
         self.setup_styles()
@@ -49,6 +82,60 @@ class TowerDefenseGUI:
         
         # Initial map rendering
         self.redraw_grid()
+
+    def load_assets(self):
+        """Loads all Kenney 2D tileset sprites, subsamples them, and caches rotations."""
+        self.assets = {}
+        assets_base_dir = os.path.dirname(os.path.abspath(__file__))
+        default_size_dir = os.path.join(assets_base_dir, "assets", "Default size")
+        
+        # Mapping of friendly names to tile file numbers (1-indexed, padded to 3 digits)
+        tile_mapping = {
+            "grass": 24,         # Flat green grass
+            "road": 93,          # Flat sand road (path)
+            "start": 130,        # Green command pad
+            "goal": 182,         # Red concrete base
+            "base_square": 181,  # Concrete square base
+            "base_round": 180,   # Concrete round base
+            
+            # Turrets
+            "turret_basic": 249, # Green single barrel
+            "turret_ice": 206,   # Cyan rocket launcher
+            "turret_fire": 250,  # Red/orange double barrel
+            
+            # Tank Bodies
+            "tank_normal_body": 245,  # Green tank body
+            "tank_fast_body": 270,    # Fighter body
+            "tank_tanky_body": 247,   # Brown tank body
+            
+            # Tank Turrets
+            "tank_normal_turret": 246, # Red/green turret
+            "tank_fast_turret": 271,   # Grey/dark turret
+            "tank_tanky_turret": 248,  # Heavy grey turret
+        }
+        
+        for name, num in tile_mapping.items():
+            filename = f"towerDefense_tile{num:03d}.png"
+            filepath = os.path.join(default_size_dir, filename)
+            
+            if os.path.exists(filepath):
+                try:
+                    # Load and subsample 64x64 -> 32x32
+                    img = tk.PhotoImage(file=filepath).subsample(2, 2)
+                    self.assets[name] = img
+                    
+                    # Pre-calculate 4 rotations (0, 90, 180, 270)
+                    self.assets[f"{name}_0"] = img
+                    
+                    # We only rotate elements that actually rotate: turrets and tank parts
+                    if "turret" in name or "tank" in name:
+                        self.assets[f"{name}_90"] = rotate_photo_image(img, 90)
+                        self.assets[f"{name}_180"] = rotate_photo_image(img, 180)
+                        self.assets[f"{name}_270"] = rotate_photo_image(img, 270)
+                except Exception as e:
+                    print(f"Error loading asset {name} ({filename}): {e}")
+            else:
+                print(f"Asset file not found: {filepath}")
 
     def setup_styles(self):
         """Sets up ttk fonts and styles for custom dark widgets."""
@@ -88,13 +175,13 @@ class TowerDefenseGUI:
         tk.Label(ctrl_frame, text="Thuật toán tìm đường:", bg="#1e293b", fg="#94a3b8", font=("Segoe UI", 9, "bold")).pack(anchor=tk.W, padx=15, pady=(5, 0))
         self.alg_var = tk.StringVar(value="A*")
         self.alg_combo = ttk.Combobox(ctrl_frame, textvariable=self.alg_var, 
-                                       values=["A*", "Dijkstra", "BFS", "Greedy Best-First", "Incremental A*", "D*", "Backtracking (DFS)", "Expectimax", "AND-OR Search"], 
+                                       values=["A*", "Dijkstra", "BFS", "DFS", "Greedy Best-First", "Incremental A*", "D*", "Backtracking (DFS)", "Belief State Search", "Steepest Ascent Hill Climbing", "Expectimax", "AND-OR Search"], 
                                        state="readonly")
         self.alg_combo.pack(fill=tk.X, padx=15, pady=(2, 5))
         self.alg_combo.bind("<<ComboboxSelected>>", self.on_algorithm_change)
         
         # Category info text for clarity
-        cat_info = "🔍 NHÓM THUẬT TOÁN:\n• Tìm đường: A*, Dijkstra, BFS, Greedy\n• AI Xác suất: Expectimax, AND-OR"
+        cat_info = "🔍 NHÓM THUẬT TOÁN:\n• Tìm đường: A*, DFS, Hill Climbing, BFS\n• Trạng thái: Belief State Search\n• AI Xác suất: Expectimax, AND-OR"
         cat_lbl = tk.Label(ctrl_frame, text=cat_info, bg="#1e293b", fg="#94a3b8", font=("Segoe UI", 8), justify=tk.LEFT)
         cat_lbl.pack(fill=tk.X, padx=15, pady=(0, 10))
         
@@ -120,8 +207,14 @@ class TowerDefenseGUI:
         self.btn_simulate = self.create_styled_button(ctrl_frame, "Bắt Đầu Mô Phỏng", self.start_enemy_simulation, "#10b981", "#059669")
         self.btn_simulate.pack(fill=tk.X, padx=15, pady=3)
         
+        self.btn_minimax_simulate = self.create_styled_button(ctrl_frame, "AI Sinh Quái (Minimax)", self.start_minimax_enemy_simulation, "#ec4899", "#db2777")
+        self.btn_minimax_simulate.pack(fill=tk.X, padx=15, pady=3)
+        
         self.btn_sa = self.create_styled_button(ctrl_frame, "Tự Động Xếp Trụ (SA)", self.start_sa_thread, "#8b5cf6", "#7c3aed")
         self.btn_sa.pack(fill=tk.X, padx=15, pady=3)
+        
+        self.btn_mc = self.create_styled_button(ctrl_frame, "Xếp Trụ (Min-Conflicts)", self.start_min_conflicts_thread, "#f59e0b", "#d97706")
+        self.btn_mc.pack(fill=tk.X, padx=15, pady=3)
         
         self.btn_reset = self.create_styled_button(ctrl_frame, "Reset Lưới", self.reset_grid, "#ef4444", "#dc2626")
         self.btn_reset.pack(fill=tk.X, padx=15, pady=3)
@@ -138,9 +231,9 @@ class TowerDefenseGUI:
         self.grid_frame = tk.Frame(main_frame, bg="#0f172a")
         self.grid_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
         
-        # Calculate cell size based on grid 20x20 inside 500x500
+        # Calculate cell size based on grid 20x20 inside 640x640
         self.grid_size = 20
-        self.cell_size = 25
+        self.cell_size = 32
         self.canvas_width = self.grid_size * self.cell_size
         self.canvas_height = self.grid_size * self.cell_size
         
@@ -213,46 +306,47 @@ class TowerDefenseGUI:
                 coord = (x, y)
                 x1 = x * self.cell_size
                 y1 = y * self.cell_size
-                x2 = x1 + self.cell_size
-                y2 = y1 + self.cell_size
+                cx = x1 + self.cell_size // 2
+                cy = y1 + self.cell_size // 2
                 
-                # Check color mapping
+                # 1. Background Grass (or Road if on path)
+                if coord in self.current_path:
+                    self.canvas.create_image(cx, cy, image=self.assets.get("road"), tags="grid_elements")
+                else:
+                    self.canvas.create_image(cx, cy, image=self.assets.get("grass"), tags="grid_elements")
+                
+                # 2. Start and Goal nodes
                 if coord == self.map_manager.start:
-                    color = "#10b981"  # Emerald Green
-                    text = "S"
+                    self.canvas.create_image(cx, cy, image=self.assets.get("start"), tags="grid_elements")
                 elif coord == self.map_manager.goal:
-                    color = "#ef4444"  # Rose Red
-                    text = "G"
+                    self.canvas.create_image(cx, cy, image=self.assets.get("goal"), tags="grid_elements")
+                
+                # 3. Obstacles / Towers
                 elif self.map_manager.is_obstacle(x, y):
                     t_type = self.map_manager.get_tower_at(x, y) or "Basic"
                     if t_type == "Ice":
-                        color = "#06b6d4"  # Cyan
-                        text = "I"
+                        base_img = self.assets.get("base_round")
+                        turret_prefix = "turret_ice"
                     elif t_type == "Fire":
-                        color = "#f97316"  # Orange
-                        text = "F"
+                        base_img = self.assets.get("base_square")
+                        turret_prefix = "turret_fire"
                     else:
-                        color = "#8b5cf6"  # Purple/Indigo
-                        text = "B"
-                elif coord in self.current_path:
-                    color = "#f59e0b"  # Golden/Yellow for path
-                    text = ""
-                elif self.search_node_states.get(coord) == "closed":
-                    color = "#1e3a8a"  # Dark blue for closed
-                    text = ""
+                        base_img = self.assets.get("base_round")
+                        turret_prefix = "turret_basic"
+                        
+                    turret_angle = self.tower_turret_angles.get((x, y), 0)
+                    turret_img = self.assets.get(f"{turret_prefix}_{turret_angle}") or self.assets.get(turret_prefix)
+                    
+                    self.canvas.create_image(cx, cy, image=base_img, tags="grid_elements")
+                    self.canvas.create_image(cx, cy, image=turret_img, tags="grid_elements")
+                
+                # 4. Open / Closed Search States (represented as glowing sci-fi borders over grass)
+                if self.search_node_states.get(coord) == "closed":
+                    self.canvas.create_rectangle(x1 + 2, y1 + 2, x1 + self.cell_size - 2, y1 + self.cell_size - 2,
+                                                 outline="#3b82f6", width=2, tags="grid_elements")
                 elif self.search_node_states.get(coord) == "open":
-                    color = "#0369a1"  # Cyan-blue for open
-                    text = ""
-                else:
-                    color = "#0f172a"  # Slate 900
-                    text = ""
-                
-                # Draw rect
-                outline_color = "#334155" if color == "#0f172a" else "#475569"
-                self.canvas.create_rectangle(x1, y1, x2, y2, fill=color, outline=outline_color, tags="grid_elements")
-                
-                if text:
-                    self.canvas.create_text(x1 + self.cell_size//2, y1 + self.cell_size//2, text=text, fill="#ffffff", font=("Segoe UI", 10, "bold"), tags="grid_elements")
+                    self.canvas.create_rectangle(x1 + 2, y1 + 2, x1 + self.cell_size - 2, y1 + self.cell_size - 2,
+                                                 outline="#06b6d4", width=2, tags="grid_elements")
 
         # Redraw final path connecting line if path exists
         if len(self.current_path) > 1:
@@ -262,21 +356,67 @@ class TowerDefenseGUI:
                 cy = py * self.cell_size + self.cell_size // 2
                 points.append((cx, cy))
             
-            # Draw line segments to make path look premium
+            # Draw line segments to make path look premium (glowing yellow/gold line)
             for i in range(len(points) - 1):
                 p1 = points[i]
                 p2 = points[i+1]
                 self.canvas.create_line(p1[0], p1[1], p2[0], p2[1], fill="#fbbf24", width=3, capstyle=tk.ROUND, tags="path_elements")
 
+        # Draw active laser beams
+        if self.active_lasers:
+            for tx, ty, ecx, ecy, color in self.active_lasers:
+                tcx = tx * self.cell_size + self.cell_size // 2
+                tcy = ty * self.cell_size + self.cell_size // 2
+                self.canvas.create_line(tcx, tcy, ecx, ecy, fill=color, width=3, capstyle=tk.ROUND, tags="path_elements")
+            # Clear lasers so they only flash for one frame
+            self.active_lasers.clear()
+
         # Re-render enemy if simulating
         if self.is_simulating and self.enemy_pos is not None:
-            ex, ey = self.enemy_pos
-            ecx = ex * self.cell_size + self.cell_size // 2
-            ecy = ey * self.cell_size + self.cell_size // 2
-            r = 7
-            is_slowed = getattr(self, "enemy_slowed", False)
-            enemy_color = "#06b6d4" if is_slowed else "#ef4444"
-            self.enemy_id = self.canvas.create_oval(ecx - r, ecy - r, ecx + r, ecy + r, fill=enemy_color, outline="#ffffff", width=2)
+            self.draw_enemy()
+
+    def draw_enemy(self):
+        """Draws the enemy tank body and turret facing the direction of movement."""
+        if self.enemy_pos is None:
+            return
+            
+        ex, ey = self.enemy_pos
+        ecx = ex * self.cell_size + self.cell_size // 2
+        ecy = ey * self.cell_size + self.cell_size // 2
+        
+        enemy_type = getattr(self, "enemy_type", "Normal")
+        if enemy_type == "Fast":
+            body_prefix = "tank_fast_body"
+            turret_prefix = "tank_fast_turret"
+        elif enemy_type == "Tanky":
+            body_prefix = "tank_tanky_body"
+            turret_prefix = "tank_tanky_turret"
+        else:
+            body_prefix = "tank_normal_body"
+            turret_prefix = "tank_normal_turret"
+            
+        enemy_angle = getattr(self, "enemy_angle", 0)
+        
+        body_img = self.assets.get(f"{body_prefix}_{enemy_angle}") or self.assets.get(body_prefix)
+        turret_img = self.assets.get(f"{turret_prefix}_{enemy_angle}") or self.assets.get(turret_prefix)
+        
+        self.canvas.create_image(ecx, ecy, image=body_img, tags="path_elements")
+        self.canvas.create_image(ecx, ecy, image=turret_img, tags="path_elements")
+        
+        # HP bar overlay
+        bar_w = 26
+        bar_h = 4
+        hp_ratio = self.enemy_hp / getattr(self, "enemy_max_hp", 100.0)
+        hp_w = int(bar_w * hp_ratio)
+        
+        bx1 = ecx - bar_w // 2
+        by1 = ecy - self.cell_size // 2 - 4
+        bx2 = bx1 + bar_w
+        by2 = by1 + bar_h
+        
+        self.canvas.create_rectangle(bx1, by1, bx2, by2, fill="#ef4444", outline="#475569", tags="path_elements")
+        if hp_w > 0:
+            self.canvas.create_rectangle(bx1, by1, bx1 + hp_w, by2, fill="#10b981", outline="", tags="path_elements")
 
     def on_algorithm_change(self, event):
         """Callback when pathfinding algorithm is changed from dropdown."""
@@ -410,6 +550,94 @@ class TowerDefenseGUI:
                 
         threading.Thread(target=run_sa_bg, daemon=True).start()
 
+    def start_min_conflicts_thread(self):
+        """Spawns background thread to run Min-Conflicts CSP layout optimization."""
+        if self.is_simulating:
+            self.write_to_log("⚠️ Vui lòng chờ mô phỏng kẻ địch chạy xong!\n")
+            return
+            
+        self.clear_search_visuals()
+        self.set_led_color("#f59e0b")
+        self.status_lbl.config(text="Trạng thái: Đang chạy Min-Conflicts...")
+        
+        # Clear log area
+        self.log_area.config(state=tk.NORMAL)
+        self.log_area.delete("1.0", tk.END)
+        self.log_area.config(state=tk.DISABLED)
+        
+        self.set_buttons_state(tk.DISABLED)
+        
+        def run_mc_bg():
+            from algorithms import min_conflicts
+            import path_step_monitor
+            try:
+                path_step_monitor.set_silenced(True)
+                min_conflicts.run_min_conflicts(
+                    self.map_manager,
+                    num_towers=18,
+                    max_steps=100,
+                    update_ui_callback=lambda: self.ui_queue.put(('map_update', None)),
+                    log_callback=lambda text: self.ui_queue.put(('log', text))
+                )
+                self.ui_queue.put(('mc_completed', None))
+            except Exception as e:
+                self.ui_queue.put(('error', str(e)))
+            finally:
+                path_step_monitor.set_silenced(False)
+                
+        threading.Thread(target=run_mc_bg, daemon=True).start()
+
+    def start_minimax_enemy_simulation(self):
+        """Runs Minimax search to choose the optimal creep type, then starts simulation."""
+        if self.is_simulating:
+            return
+            
+        if not self.current_path:
+            self.write_to_log("⚠️ Chưa tìm được đường đi! Hãy bấm 'Tìm Đường Lại' trước.\n")
+            return
+            
+        self.write_to_log("\n--- Bắt đầu đấu trí Minimax cho Creep ---\n")
+        from algorithms import minimax
+        
+        best_creep, minimax_val, log_steps = minimax.decide_optimal_creep(self.map_manager, self.current_path)
+        
+        for step in log_steps:
+            self.write_to_log(step + "\n")
+            
+        self.write_to_log(f"🤖 AI chọn loại quái: {best_creep.upper()} (Điểm đánh giá Minimax: {minimax_val:.1f})\n")
+        
+        self.enemy_type = best_creep
+        if best_creep == "Tanky":
+            self.enemy_max_hp = 200.0
+            self.enemy_hp = 200.0
+            self.enemy_speed = 0.1
+        elif best_creep == "Fast":
+            self.enemy_max_hp = 60.0
+            self.enemy_hp = 60.0
+            self.enemy_speed = 0.35
+        else:
+            self.enemy_max_hp = 100.0
+            self.enemy_hp = 100.0
+            self.enemy_speed = 0.2
+            
+        self.is_simulating = True
+        self.enemy_path_index = 0
+        start_x, start_y = self.current_path[0]
+        self.enemy_pos = (float(start_x), float(start_y))
+        self.enemy_angle = 0
+        self.tower_turret_angles.clear()
+        self.active_lasers.clear()
+        
+        self.enemy_slowed = False
+        self.enemy_strategy = getattr(self.map_manager, "last_and_or_strategy", {})
+        
+        self.set_buttons_state(tk.DISABLED)
+        
+        self.status_lbl.config(text=f"Trạng thái: Creep {best_creep} (HP: {self.enemy_hp:.0f}/{self.enemy_max_hp:.0f}) đang di chuyển...")
+        self.set_led_color("#3b82f6")
+        
+        self.run_animation_step()
+
     def start_all_paths_thread(self):
         """Spawns background thread to count all simple paths using Backtracking DFS."""
         if self.is_simulating:
@@ -491,8 +719,10 @@ class TowerDefenseGUI:
         """Enables or disables all control buttons at once."""
         self.btn_find.config(state=state)
         self.btn_simulate.config(state=state)
+        self.btn_minimax_simulate.config(state=state)
         self.btn_reset.config(state=state)
         self.btn_sa.config(state=state)
+        self.btn_mc.config(state=state)
         self.btn_all_paths.config(state=state)
 
     def start_enemy_simulation(self):
@@ -511,9 +741,15 @@ class TowerDefenseGUI:
         self.enemy_path_index = 0
         start_x, start_y = self.current_path[0]
         self.enemy_pos = (float(start_x), float(start_y))
+        self.enemy_angle = 0
+        self.tower_turret_angles.clear()
+        self.active_lasers.clear()
         
         # Initialize enemy simulation variables
+        self.enemy_type = "Normal"
+        self.enemy_max_hp = 100.0
         self.enemy_hp = 100.0
+        self.enemy_speed = 0.2
         self.enemy_slowed = False
         self.enemy_strategy = getattr(self.map_manager, "last_and_or_strategy", {})
         
@@ -567,6 +803,12 @@ class TowerDefenseGUI:
         dx = dest_x - ex
         dy = dest_y - ey
         
+        # Calculate enemy angle facing movement direction
+        if abs(dx) > abs(dy):
+            self.enemy_angle = 90 if dx > 0 else 270
+        else:
+            self.enemy_angle = 180 if dy > 0 else 0
+        
         dist_sq = dx*dx + dy*dy
         if dist_sq < 0.04:
             self.enemy_pos = (dest_x, dest_y)
@@ -576,37 +818,82 @@ class TowerDefenseGUI:
             cx, cy = int(dest_x), int(dest_y)
             alg_name = self.alg_var.get()
             
-            if alg_name in ["Expectimax", "AND-OR Search"]:
+            if alg_name in ["Expectimax", "AND-OR Search"] or getattr(self, "enemy_type", "Normal") in ["Fast", "Tanky"]:
                 import random
                 total_damage = 0.0
                 frozen_by_tower = False
+                enemy_type = getattr(self, "enemy_type", "Normal")
                 
                 for (tx, ty), t_type in self.map_manager.towers.items():
                     dist = math.sqrt((tx - cx)**2 + (ty - cy)**2)
+                    in_range = False
+                    laser_color = "#fbbf24"
+                    
                     if t_type == "Basic" and dist <= 3.0:
-                        total_damage += 10.0
-                        self.write_to_log(f"💥 Tháp Basic tại ({tx},{ty}) bắn: 10 sát thương!\n")
+                        in_range = True
+                        laser_color = "#fbbf24"  # Gold
+                        if enemy_type == "Fast":
+                            dmg = 12.0
+                        elif enemy_type == "Tanky":
+                            dmg = 8.0
+                        else:
+                            dmg = 10.0
+                        total_damage += dmg
+                        self.write_to_log(f"💥 Tháp Basic tại ({tx},{ty}) bắn: {dmg:.1f} sát thương!\n")
                     elif t_type == "Fire" and dist <= 4.0:
-                        if random.random() < 0.40:
-                            total_damage += 30.0
-                            self.write_to_log(f"💥 Tháp Fire tại ({tx},{ty}) CHÍ MẠNG: 30 sát thương!\n")
+                        in_range = True
+                        laser_color = "#f97316"  # Orange-Red
+                        if enemy_type == "Fast":
+                            dmg = 7.2
+                        elif enemy_type == "Tanky":
+                            dmg = 27.0
                         else:
-                            total_damage += 10.0
-                            self.write_to_log(f"🔫 Tháp Fire tại ({tx},{ty}) bắn: 10 sát thương.\n")
+                            dmg = 18.0
+                        
+                        if random.random() < 0.40 and enemy_type == "Normal":
+                            total_damage += dmg * 1.6
+                            self.write_to_log(f"💥 Tháp Fire tại ({tx},{ty}) CHÍ MẠNG: {dmg*1.6:.1f} sát thương!\n")
+                        else:
+                            total_damage += dmg
+                            self.write_to_log(f"🔫 Tháp Fire tại ({tx},{ty}) bắn: {dmg:.1f} sát thương.\n")
                     elif t_type == "Ice" and dist <= 2.0:
-                        if random.random() < 0.30:
-                            total_damage += 20.0
-                            frozen_by_tower = True
-                            self.write_to_log(f"❄️ Tháp Ice tại ({tx},{ty}) ĐÓNG BĂNG: 20 sát thương + làm chậm!\n")
+                        in_range = True
+                        laser_color = "#06b6d4"  # Cyan
+                        if enemy_type == "Fast":
+                            dmg = 12.0
+                        elif enemy_type == "Tanky":
+                            dmg = 7.6
                         else:
-                            total_damage += 5.0
-                            self.write_to_log(f"🔫 Tháp Ice tại ({tx},{ty}) bắn: 5 sát thương.\n")
+                            dmg = 9.5
+                        
+                        if random.random() < 0.30:
+                            total_damage += dmg * 2.0
+                            frozen_by_tower = True
+                            self.write_to_log(f"❄️ Tháp Ice tại ({tx},{ty}) ĐÓNG BĂNG: {dmg*2.0:.1f} sát thương + làm chậm!\n")
+                        else:
+                            total_damage += dmg
+                            self.write_to_log(f"🔫 Tháp Ice tại ({tx},{ty}) bắn: {dmg:.1f} sát thương.\n")
+                            
+                    if in_range:
+                        # Rotate tower turret toward the enemy
+                        tdx = cx - tx
+                        tdy = cy - ty
+                        if abs(tdx) > abs(tdy):
+                            t_angle = 90 if tdx > 0 else 270
+                        else:
+                            t_angle = 180 if tdy > 0 else 0
+                        self.tower_turret_angles[(tx, ty)] = t_angle
+                        
+                        # Add laser beam flash effect
+                        ecx = cx * self.cell_size + self.cell_size // 2
+                        ecy = cy * self.cell_size + self.cell_size // 2
+                        self.active_lasers.append((tx, ty, ecx, ecy, laser_color))
                             
                 if total_damage > 0:
                     self.enemy_hp -= total_damage
                     if self.enemy_hp < 0:
                         self.enemy_hp = 0.0
-                    self.write_to_log(f"❤️ Máu còn lại: {self.enemy_hp:.1f}/100\n")
+                    self.write_to_log(f"❤️ Máu còn lại: {self.enemy_hp:.1f}/{getattr(self, 'enemy_max_hp', 100.0)}\n")
                     
                 if self.enemy_hp <= 0:
                     self.is_simulating = False
@@ -620,7 +907,7 @@ class TowerDefenseGUI:
                     
                 # Update slow state
                 self.enemy_slowed = frozen_by_tower
-                self.status_lbl.config(text=f"Trạng thái: Kẻ địch đang di chuyển... HP: {self.enemy_hp:.1f}/100")
+                self.status_lbl.config(text=f"Trạng thái: Kẻ địch di chuyển... HP: {self.enemy_hp:.1f}/{getattr(self, 'enemy_max_hp', 100.0)}")
                 
                 # AND-OR Search dynamic path rerouting
                 if alg_name == "AND-OR Search" and self.enemy_path_index < len(self.current_path):
@@ -643,7 +930,8 @@ class TowerDefenseGUI:
                             curr_node = nxt
                         self.current_path = completed + path_suffix
         else:
-            step_size = 0.1 if self.enemy_slowed else 0.2
+            speed = getattr(self, "enemy_speed", 0.2)
+            step_size = (speed * 0.5) if self.enemy_slowed else speed
             self.enemy_pos = (ex + dx * step_size, ey + dy * step_size)
             
         self.redraw_grid()
@@ -739,6 +1027,13 @@ class TowerDefenseGUI:
                 self.set_buttons_state(tk.NORMAL)
                 self.write_to_log("✅ Đã tạo mê cung bằng Simulated Annealing xong!\n")
                 self.status_lbl.config(text="Trạng thái: Hoàn tất Simulated Annealing")
+                self.set_led_color("#10b981")
+                self.redraw_grid()
+                
+            elif item_type == 'mc_completed':
+                self.set_buttons_state(tk.NORMAL)
+                self.write_to_log("✅ Đã tối ưu hóa vị trí tháp bằng Min-Conflicts xong!\n")
+                self.status_lbl.config(text="Trạng thái: Hoàn tất Min-Conflicts")
                 self.set_led_color("#10b981")
                 self.redraw_grid()
                 

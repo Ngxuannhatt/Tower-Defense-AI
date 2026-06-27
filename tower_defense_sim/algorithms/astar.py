@@ -3,109 +3,137 @@ import time
 import path_step_monitor
 
 class AStarNode:
-    def __init__(self, position, parent=None):
+    def __init__(self, position, parent=None, g=0.0, h=0.0):
         self.position = position
         self.parent = parent
-        self.g_cost = 0.0
-        self.h_cost = 0.0
-        self.f_cost = 0.0
+        self.g = g
+        self.h = h
+        self.f = g + h
+
+    @property
+    def g_cost(self):
+        return self.g
+
+    @g_cost.setter
+    def g_cost(self, val):
+        self.g = val
+
+    @property
+    def h_cost(self):
+        return self.h
+
+    @h_cost.setter
+    def h_cost(self, val):
+        self.h = val
+
+    @property
+    def f_cost(self):
+        return self.f
+
+    @f_cost.setter
+    def f_cost(self, val):
+        self.f = val
 
     def __lt__(self, other):
-        # tie-breaker: prefer higher g_cost (deeper exploration) or lower f_cost
-        if self.f_cost == other.f_cost:
-            return self.g_cost > other.g_cost
-        return self.f_cost < other.f_cost
+        # tie-breaker: prefer higher g (deeper exploration) if f is equal
+        if self.f == other.f:
+            return self.g > other.g
+        return self.f < other.f
 
 def solve(start, goal, grid, delay=0.0):
     """
     Solves pathfinding from start to goal using A*.
-    grid: an object implementing get_neighbors(x, y)
+    grid: an object implementing get_neighbors(x, y), is_valid_coord, and is_obstacle
     delay: sleep duration between steps in seconds
     """
     path_step_monitor.log_step(f"Bắt đầu thuật toán A* từ {start} đến {goal}")
     
-    start_node = AStarNode(start)
-    goal_node = AStarNode(goal)
+    # Heuristic using Manhattan distance
+    start_h = abs(start[0] - goal[0]) + abs(start[1] - goal[1])
+    start_node = AStarNode(start, parent=None, g=0.0, h=start_h)
     
-    open_list = []
-    # Use a dictionary to track node objects in open_list by position
-    open_dict = {start: start_node}
-    # Closed set tracks visited positions
-    closed_set = set()
+    FRONTIER = [start_node]
+    REACHED = {}
     
-    heapq.heappush(open_list, start_node)
     path_step_monitor.log_node_state(start[0], start[1], "open")
     
-    while open_list:
-        current_node = heapq.heappop(open_list)
-        pos = current_node.position
+    while FRONTIER:
+        n_node = heapq.heappop(FRONTIER)
+        n = n_node.position
         
-        # Remove from open_dict if it's the current one
-        if pos in open_dict and open_dict[pos] == current_node:
-            del open_dict[pos]
-            
-        if pos in closed_set:
+        # If this coordinate was already reached via a better/shorter path, skip
+        if n in REACHED and REACHED[n].g <= n_node.g:
             continue
             
-        closed_set.add(pos)
-        path_step_monitor.log_node_state(pos[0], pos[1], "closed")
+        REACHED[n] = n_node
+        path_step_monitor.log_node_state(n[0], n[1], "closed")
+        path_step_monitor.log_step(f"Mở node: {n}, cost: {n_node.g}, total_cost: {n_node.f}")
         
-        # LOG STEP REQUIREMENT:
-        path_step_monitor.log_step(f"Mở node: {current_node.position}, cost: {current_node.g_cost}, total_cost: {current_node.f_cost}")
-        
-        # Slow down for visualization
         if delay > 0:
             time.sleep(delay)
             
-        # Check if we reached the goal
-        if pos == goal:
+        if n == goal:
             path_step_monitor.log_step(f"Đã tìm thấy đường đi tới đích {goal}!")
-            # Reconstruct path
             path = []
-            curr = current_node
+            curr = n_node
             while curr:
                 path.append(curr.position)
                 curr = curr.parent
             path.reverse()
             
-            # Log final path nodes
+            # Log path nodes for visual tracking
             for px, py in path:
                 if (px, py) != start and (px, py) != goal:
                     path_step_monitor.log_node_state(px, py, "path")
-            
             return path
             
-        # Get walkable neighbors
-        neighbors = grid.get_neighbors(pos[0], pos[1])
-        for n_pos in neighbors:
-            if n_pos in closed_set:
-                continue
-                
-            # Manhattan distance heuristic
-            h = abs(n_pos[0] - goal[0]) + abs(n_pos[1] - goal[1])
-            g = current_node.g_cost + 1.0  # cost between adjacent nodes is 1
-            f = g + h
+        neighbors = grid.get_neighbors(n[0], n[1])
+        for m in neighbors:
+            g_new = n_node.g + 1.0
+            h_m = abs(m[0] - goal[0]) + abs(m[1] - goal[1])
+            f_m = g_new + h_m
             
-            # Check if this neighbor is already in open list with a better or equal cost
-            if n_pos in open_dict:
-                existing_node = open_dict[n_pos]
-                if g >= existing_node.g_cost:
+            # Case 1: m is in REACHED
+            if m in REACHED:
+                m_reached_node = REACHED[m]
+                if g_new >= m_reached_node.g:
                     continue
+                else:
+                    # Remove from REACHED and update it, then push back to FRONTIER
+                    del REACHED[m]
+                    m_reached_node.g = g_new
+                    m_reached_node.f = f_m
+                    m_reached_node.parent = n_node
+                    heapq.heappush(FRONTIER, m_reached_node)
+                    
+                    path_step_monitor.log_node_state(m[0], m[1], "open")
+                    path_step_monitor.log_step(f"Cập nhật Heuristic (Reopen) cho {m}: g={g_new}, h={h_m}, f={f_m}")
+                    if delay > 0:
+                        time.sleep(delay * 0.5)
             
-            # Update or create node
-            neighbor_node = AStarNode(n_pos, current_node)
-            neighbor_node.g_cost = g
-            neighbor_node.h_cost = h
-            neighbor_node.f_cost = f
-            
-            open_dict[n_pos] = neighbor_node
-            heapq.heappush(open_list, neighbor_node)
-            
-            path_step_monitor.log_node_state(n_pos[0], n_pos[1], "open")
-            path_step_monitor.log_step(f"Cập nhật Heuristic cho {n_pos}: g={g}, h={h}, f={f}")
-            
-            if delay > 0:
-                time.sleep(delay * 0.5)  # slight delay for neighbor updates
+            # Case 2: m is in FRONTIER
+            else:
+                m_frontier_node = next((node for node in FRONTIER if node.position == m), None)
+                if m_frontier_node:
+                    if g_new < m_frontier_node.g:
+                        m_frontier_node.g = g_new
+                        m_frontier_node.f = f_m
+                        m_frontier_node.parent = n_node
+                        heapq.heapify(FRONTIER)
+                        
+                        path_step_monitor.log_step(f"Cập nhật Heuristic cho {m} trong FRONTIER: g={g_new}, h={h_m}, f={f_m}")
+                        if delay > 0:
+                            time.sleep(delay * 0.5)
                 
+                # Case 3: m is not in either
+                else:
+                    m_node = AStarNode(m, parent=n_node, g=g_new, h=h_m)
+                    heapq.heappush(FRONTIER, m_node)
+                    
+                    path_step_monitor.log_node_state(m[0], m[1], "open")
+                    path_step_monitor.log_step(f"Cập nhật Heuristic cho {m}: g={g_new}, h={h_m}, f={f_m}")
+                    if delay > 0:
+                        time.sleep(delay * 0.5)
+                        
     path_step_monitor.log_step("Không tìm thấy đường đi khả thi!")
     return None

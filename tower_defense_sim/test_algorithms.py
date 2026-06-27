@@ -21,7 +21,7 @@ def run_tests():
     
     pathfinder = Pathfinder(map_manager)
     
-    algorithms = ["A*", "Dijkstra", "Incremental A*", "D*", "BFS", "Greedy Best-First", "Backtracking (DFS)", "Expectimax", "AND-OR Search"]
+    algorithms = ["A*", "Dijkstra", "Incremental A*", "D*", "BFS", "DFS", "Greedy Best-First", "Backtracking (DFS)", "Belief State Search", "Steepest Ascent Hill Climbing", "Expectimax", "AND-OR Search"]
     
     for alg in algorithms:
         print(f"\n--- Testing Algorithm: {alg} ---")

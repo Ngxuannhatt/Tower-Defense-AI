@@ -6,7 +6,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.append(current_dir)
 
-from algorithms import astar, dijkstra, incremental_astar, dstar, bfs, greedy_best_first, backtracking, expectimax, and_or
+from algorithms import astar, dijkstra, incremental_astar, dstar, bfs, greedy_best_first, backtracking, expectimax, and_or, dfs, belief_state_search, hill_climbing
 
 class Pathfinder:
     """
@@ -69,6 +69,15 @@ class Pathfinder:
             
         elif self.current_algorithm == "AND-OR Search":
             return and_or.solve(start, goal, self.map_manager, delay=self.delay)
+            
+        elif self.current_algorithm == "DFS":
+            return dfs.solve(start, goal, self.map_manager, delay=self.delay)
+            
+        elif self.current_algorithm == "Belief State Search":
+            return belief_state_search.solve(start, goal, self.map_manager, delay=self.delay)
+            
+        elif self.current_algorithm == "Steepest Ascent Hill Climbing":
+            return hill_climbing.solve(start, goal, self.map_manager, delay=self.delay)
             
         else:
             raise ValueError(f"Thuật toán không hợp lệ: {self.current_algorithm}")
