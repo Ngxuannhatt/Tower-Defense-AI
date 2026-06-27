@@ -182,7 +182,7 @@ class TowerDefenseGUI:
         tk.Label(ctrl_frame, text="Thuật toán tìm đường:", bg="#1e293b", fg="#94a3b8", font=("Segoe UI", 9, "bold")).pack(anchor=tk.W, padx=15, pady=(5, 0))
         self.alg_var = tk.StringVar(value="A*")
         self.alg_combo = ttk.Combobox(ctrl_frame, textvariable=self.alg_var, 
-                                       values=["A*", "Dijkstra", "BFS", "DFS", "Greedy Best-First", "Incremental A*", "D*", "Backtracking (DFS)", "Belief State Search", "Steepest Ascent Hill Climbing", "Simulated Annealing", "Expectimax", "AND-OR Search"], 
+                                       values=["A*", "BFS", "DFS", "Greedy Best-First", "Backtracking (DFS)", "Belief State Search", "Steepest Ascent Hill Climbing", "Expectimax","Simulated Annealing", "AND-OR Search", "alpha_beta","IDAstar","Local_Beam_Search","UCS", "forward_checking","DFS_Searching_for_partially_observable_problems" ], 
                                        state="readonly")
         self.alg_combo.pack(fill=tk.X, padx=15, pady=(2, 5))
         self.alg_combo.bind("<<ComboboxSelected>>", self.on_algorithm_change)

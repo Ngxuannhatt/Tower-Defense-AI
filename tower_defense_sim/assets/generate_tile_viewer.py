@@ -1,6 +1,6 @@
 import os
 
-assets_dir = r"d:\Tower-Defense-AI\tower_defense_sim\assets\Default size"
+assets_dir = r"d:\Final project AI\Tower-Defense-AI\tower_defense_sim\assets\Default size"
 files = [f for f in os.listdir(assets_dir) if f.endswith(".png")]
 files.sort()
 
