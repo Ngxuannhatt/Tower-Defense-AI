@@ -6,7 +6,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.append(current_dir)
 
-from algorithms import astar, incremental_astar, dstar, bfs, greedy_best_first, backtracking, expectimax, and_or, dfs, belief_state_search, hill_climbing,alpha_beta, IDAstar, Local_Beam_Search, UCS, forward_checking, DFS_Searching_for_partially_observable_problems
+from algorithms import astar, incremental_astar, dstar, bfs, greedy_best_first, backtracking, expectimax, and_or, dfs, belief_state_search, hill_climbing,simulated_annealing,alpha_beta, IDAstar, Local_Beam_Search, UCS, forward_checking, DFS_Searching_for_partially_observable_problems
 
 
 class Pathfinder:
@@ -20,7 +20,7 @@ class Pathfinder:
         self.delay = 0.0  # delay in seconds between exploration steps
 
     def set_algorithm(self, algorithm_name):
-        """Sets the active algorithm (A*, Incremental A*, D*, BFS, Greedy, Backtracking, Expectimax, AND-OR)."""
+        """Sets the active algorithm (A*,  BFS, Greedy, Backtracking, Expectimax, AND-OR, Simulated Annealing)."""
         self.current_algorithm = algorithm_name
 
     def set_delay(self, delay_seconds):
@@ -95,6 +95,9 @@ class Pathfinder:
         elif self.current_algorithm == "DFS_Searching_for_partially_observable_problems":
             return DFS_Searching_for_partially_observable_problems.solve(start, goal, self.map_manager, delay=self.delay)
 
+        elif self.current_algorithm == "Simulated Annealing":
+            return simulated_annealing.solve(start, goal, self.map_manager, delay=self.delay)
+            
         else:
             raise ValueError(f"Thuật toán không hợp lệ: {self.current_algorithm}")
 

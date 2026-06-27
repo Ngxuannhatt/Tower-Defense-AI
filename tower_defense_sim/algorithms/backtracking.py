@@ -52,16 +52,17 @@ def solve(start, goal, grid, delay=0.0):
     return None
 
 
-def solve_all_paths(start, goal, grid, max_steps=2000):
+def solve_all_paths(start, goal, grid, max_steps=50000):
     all_paths = []
-    current_path = []
     step_count = 0
     
     def dfs(curr, path_track):
         nonlocal step_count
-        step_count += 1
-        if step_count > max_steps: return
+        if len(all_paths) >= 50 or step_count > max_steps:
+            return
             
+        step_count += 1
+        
         if curr == goal:
             all_paths.append(list(path_track))
             return
@@ -72,6 +73,8 @@ def solve_all_paths(start, goal, grid, max_steps=2000):
                 path_track.append(nxt)
                 dfs(nxt, path_track)
                 path_track.pop()
+                if len(all_paths) >= 50 or step_count > max_steps:
+                    break
 
     dfs(start, [start])
     if step_count > max_steps:
