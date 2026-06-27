@@ -6,7 +6,8 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.append(current_dir)
 
-from algorithms import astar, dijkstra, incremental_astar, dstar, bfs, greedy_best_first, backtracking, expectimax,and_or,alpha_beta, IDAstar, Local_Beam_Search, UCS, forward_checking, DFS_Searching_for_partially_observable_problems
+from algorithms import astar, incremental_astar, dstar, bfs, greedy_best_first, backtracking, expectimax, and_or, dfs, belief_state_search, hill_climbing,alpha_beta, IDAstar, Local_Beam_Search, UCS, forward_checking, DFS_Searching_for_partially_observable_problems
+
 
 class Pathfinder:
     """
@@ -15,11 +16,11 @@ class Pathfinder:
     """
     def __init__(self, map_manager):
         self.map_manager = map_manager
-        self.current_algorithm = "A*"
+        self.current_algorithm = "alpha_beta"
         self.delay = 0.0  # delay in seconds between exploration steps
 
     def set_algorithm(self, algorithm_name):
-        """Sets the active algorithm (A*, Dijkstra, Incremental A*, D*, BFS, Greedy, Backtracking, Expectimax, AND-OR)."""
+        """Sets the active algorithm (A*, Incremental A*, D*, BFS, Greedy, Backtracking, Expectimax, AND-OR)."""
         self.current_algorithm = algorithm_name
 
     def set_delay(self, delay_seconds):
@@ -44,9 +45,6 @@ class Pathfinder:
         if self.current_algorithm == "A*":
             return astar.solve(start, goal, self.map_manager, delay=self.delay)
             
-        elif self.current_algorithm == "Dijkstra":
-            return dijkstra.solve(start, goal, self.map_manager, delay=self.delay)
-            
         elif self.current_algorithm == "Incremental A*":
             # Pass grid, delay, and force_init to the LPA* solver
             return incremental_astar.solve(start, goal, self.map_manager, delay=self.delay, force_init=force_init)
@@ -69,8 +67,34 @@ class Pathfinder:
             
         elif self.current_algorithm == "AND-OR Search":
             return and_or.solve(start, goal, self.map_manager, delay=self.delay)
+            
+        elif self.current_algorithm == "DFS":
+            return dfs.solve(start, goal, self.map_manager, delay=self.delay)
+            
+        elif self.current_algorithm == "Belief State Search":
+            return belief_state_search.solve(start, goal, self.map_manager, delay=self.delay)
+            
+        elif self.current_algorithm == "Steepest Ascent Hill Climbing":
+            return hill_climbing.solve(start, goal, self.map_manager, delay=self.delay)
+            
         elif self.current_algorithm == "alpha_beta":
-            return alpha_beta.solve(start, goal, self.map_manager, delay=self.delay)            
+            return alpha_beta.solve(start, goal, self.map_manager, delay=self.delay)
+            
+        elif self.current_algorithm == "IDAstar":
+            return IDAstar.solve(start, goal, self.map_manager, delay=self.delay)
+            
+        elif self.current_algorithm == "Local_Beam_Search":
+            return Local_Beam_Search.solve(start, goal, self.map_manager, delay=self.delay)
+            
+        elif self.current_algorithm in ["UCS", "Dijkstra"]:
+            return UCS.solve(start, goal, self.map_manager, delay=self.delay)
+            
+        elif self.current_algorithm == "forward_checking":
+            return forward_checking.solve(start, goal, self.map_manager, delay=self.delay)
+            
+        elif self.current_algorithm == "DFS_Searching_for_partially_observable_problems":
+            return DFS_Searching_for_partially_observable_problems.solve(start, goal, self.map_manager, delay=self.delay)
+
         else:
             raise ValueError(f"Thuật toán không hợp lệ: {self.current_algorithm}")
 

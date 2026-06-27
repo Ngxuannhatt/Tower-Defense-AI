@@ -1,68 +1,50 @@
 import heapq
-from .node import Node
+import time
+import path_step_monitor
 
-def ucs(self): 
-    root_node = Node(self.agent_x, self.agent_y, self.matrix, parent=None, action=f"Bắt đầu tại ({self.agent_x},{self.agent_y})")
+def solve(start, goal, grid, delay=0.0):
+    path_step_monitor.log_step(f"Khởi chạy Uniform Cost Search (UCS) từ {start} đến {goal}")
     
-    # Tính H (số ô còn rác)
-    initial_h = get_misplaced_count(self, root_node.matrix)
-    
-    # Priority Queue lưu: (h_value, counter, node)
-    frontier = []
+    # Priority Queue stores: (g_cost, counter, position, path)
+    # Using a counter to avoid comparing lists/tuples when g is equal
     counter = 0
-    heapq.heappush(frontier, (initial_h, counter, root_node))
-     
-    reached = set()
-    steps_limit = 0
-
+    frontier = [(0.0, counter, start, [start])]
+    reached = {start: 0.0}
+    
+    path_step_monitor.log_node_state(start[0], start[1], "open")
+    
     while frontier:
-        curr_h, _, curr = heapq.heappop(frontier)
+        g, _, curr, path = heapq.heappop(frontier)
         
-        # Kiểm tra trùng lặp sau khi POP
-        state_key = curr.get_state_key()
-        if state_key in reached:
+        # If we reached this with a higher cost than already known, skip
+        if g > reached.get(curr, float('inf')):
             continue
-        reached.add(state_key)
+            
+        path_step_monitor.log_node_state(curr[0], curr[1], "closed")
+        path_step_monitor.log_step(f"Mở node: {curr}, cost g={g}")
         
-        # Kiểm tra đích
-        if curr.is_goal():
-            path = []
-            temp = curr
-            while temp is not None:
-                path.append(temp)
-                temp = temp.parent
-            path.reverse()
+        if delay > 0:
+            time.sleep(delay)
+            
+        if curr == goal:
+            path_step_monitor.log_step(f"🎉 Đã tìm thấy đích {goal} với chi phí {g}!")
+            # Mark final path in GUI
+            for px, py in path:
+                if (px, py) != start and (px, py) != goal:
+                    path_step_monitor.log_node_state(px, py, "path")
             return path
             
-        steps_limit += 1
-        if steps_limit > 50000: # Giảm giới hạn để tránh treo UI
-            return None
-
-        # Sinh node con
-        r, c = curr.x, curr.y
-        possible_moves = []
-        
-        # 1. Di chuyển
-        for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-            nr, nc = r + dr, c + dc
-            if 0 <= nr < self.n and 0 <= nc < self.n:
-                possible_moves.append(Node(nr, nc, curr.matrix, parent=curr, action=f"Đi tới ({nr},{nc})"))
-                
-        # 2. Hút rác
-        if curr.matrix[r][c] == 1:
-            new_mat = [row[:] for row in curr.matrix]
-            new_mat[r][c] = 0
-            possible_moves.append(Node(r, c, new_mat, parent=curr, action=f"Hút rác tại ({r},{c})"))
-            
-        # Push tất cả vào Heap
-        for child in possible_moves:
-            if child.get_state_key() not in reached:
+        neighbors = grid.get_neighbors(curr[0], curr[1])
+        for neighbor in neighbors:
+            g_new = g + 1.0 # step cost is uniform 1.0
+            if neighbor not in reached or g_new < reached[neighbor]:
+                reached[neighbor] = g_new
                 counter += 1
-                h_val = get_misplaced_count(self, child.matrix)
-                heapq.heappush(frontier, (h_val, counter, child))
-    
+                heapq.heappush(frontier, (g_new, counter, neighbor, path + [neighbor]))
+                path_step_monitor.log_node_state(neighbor[0], neighbor[1], "open")
+                path_step_monitor.log_step(f"Cập nhật node lân cận: {neighbor}, g={g_new}")
+                if delay > 0:
+                    time.sleep(delay * 0.5)
+                    
+    path_step_monitor.log_step("Không tìm thấy đường đi khả thi!")
     return None
-
-def get_misplaced_count(self, matrix):
-    # Đếm số ô còn rác (1 là rác)
-    return sum(row.count(1) for row in matrix)

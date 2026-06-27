@@ -17,8 +17,15 @@ def solve(start, goal, map_manager, delay=0.0):
             return [("normal", action)]
 
     strategy_map = {}
+    state_count = 0
+    max_states = 5000
 
     def or_search(state, path):
+        nonlocal state_count
+        state_count += 1
+        if state_count > max_states or len(path) > 100:
+            return None
+
         if goal_test(state):
             return []
             

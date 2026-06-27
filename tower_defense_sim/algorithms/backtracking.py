@@ -5,8 +5,15 @@ def solve(start, goal, grid, delay=0.0):
     path_step_monitor.log_step(f"Khởi chạy Backtracking CSP từ {start}")
     
     assignment = []
+    step_count = 0
+    max_steps = 2000
     
     def recursive_backtracking(current_node):
+        nonlocal step_count
+        step_count += 1
+        if step_count > max_steps:
+            return False
+            
         if current_node == goal:
             assignment.append(current_node)
             path_step_monitor.log_step(f"🎉 Đã tìm thấy đích tại {current_node}!")
