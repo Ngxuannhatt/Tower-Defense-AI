@@ -6,7 +6,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.append(current_dir)
 
-from algorithms import astar, dijkstra, incremental_astar, dstar, bfs, greedy_best_first, backtracking, expectimax, and_or, dfs, belief_state_search, hill_climbing
+from algorithms import astar, dijkstra, incremental_astar, dstar, bfs, greedy_best_first, backtracking, expectimax, and_or, dfs, belief_state_search, hill_climbing, simulated_annealing
 
 class Pathfinder:
     """
@@ -19,7 +19,7 @@ class Pathfinder:
         self.delay = 0.0  # delay in seconds between exploration steps
 
     def set_algorithm(self, algorithm_name):
-        """Sets the active algorithm (A*, Dijkstra, Incremental A*, D*, BFS, Greedy, Backtracking, Expectimax, AND-OR)."""
+        """Sets the active algorithm (A*, Dijkstra, Incremental A*, D*, BFS, Greedy, Backtracking, Expectimax, AND-OR, Simulated Annealing)."""
         self.current_algorithm = algorithm_name
 
     def set_delay(self, delay_seconds):
@@ -78,6 +78,9 @@ class Pathfinder:
             
         elif self.current_algorithm == "Steepest Ascent Hill Climbing":
             return hill_climbing.solve(start, goal, self.map_manager, delay=self.delay)
+            
+        elif self.current_algorithm == "Simulated Annealing":
+            return simulated_annealing.solve(start, goal, self.map_manager, delay=self.delay)
             
         else:
             raise ValueError(f"Thuật toán không hợp lệ: {self.current_algorithm}")

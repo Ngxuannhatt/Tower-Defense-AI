@@ -46,6 +46,7 @@ class TowerDefenseGUI:
         
         # UI Queue for thread-safe updates
         self.ui_queue = queue.Queue()
+        self.map_manager.ui_queue = self.ui_queue
         
         # Grid visual state cache (tracks node state colors to keep search artifacts)
         # 0: empty, 1: open, 2: closed, 3: path
@@ -56,6 +57,7 @@ class TowerDefenseGUI:
         
         # Active path lists
         self.current_path = []
+        self.all_found_paths = []
         
         # Enemy simulation state
         self.enemy_id = None
@@ -175,13 +177,13 @@ class TowerDefenseGUI:
         tk.Label(ctrl_frame, text="Thuật toán tìm đường:", bg="#1e293b", fg="#94a3b8", font=("Segoe UI", 9, "bold")).pack(anchor=tk.W, padx=15, pady=(5, 0))
         self.alg_var = tk.StringVar(value="A*")
         self.alg_combo = ttk.Combobox(ctrl_frame, textvariable=self.alg_var, 
-                                       values=["A*", "Dijkstra", "BFS", "DFS", "Greedy Best-First", "Incremental A*", "D*", "Backtracking (DFS)", "Belief State Search", "Steepest Ascent Hill Climbing", "Expectimax", "AND-OR Search"], 
+                                       values=["A*", "Dijkstra", "BFS", "DFS", "Greedy Best-First", "Incremental A*", "D*", "Backtracking (DFS)", "Belief State Search", "Steepest Ascent Hill Climbing", "Simulated Annealing", "Expectimax", "AND-OR Search"], 
                                        state="readonly")
         self.alg_combo.pack(fill=tk.X, padx=15, pady=(2, 5))
         self.alg_combo.bind("<<ComboboxSelected>>", self.on_algorithm_change)
         
         # Category info text for clarity
-        cat_info = "🔍 NHÓM THUẬT TOÁN:\n• Tìm đường: A*, DFS, Hill Climbing, BFS\n• Trạng thái: Belief State Search\n• AI Xác suất: Expectimax, AND-OR"
+        cat_info = "🔍 NHÓM THUẬT TOÁN:\n• Tìm đường: A*, DFS, Hill Climbing, SA, BFS\n• Trạng thái: Belief State Search\n• AI Xác suất: Expectimax, AND-OR"
         cat_lbl = tk.Label(ctrl_frame, text=cat_info, bg="#1e293b", fg="#94a3b8", font=("Segoe UI", 8), justify=tk.LEFT)
         cat_lbl.pack(fill=tk.X, padx=15, pady=(0, 10))
         
@@ -215,6 +217,9 @@ class TowerDefenseGUI:
         
         self.btn_mc = self.create_styled_button(ctrl_frame, "Xếp Trụ (Min-Conflicts)", self.start_min_conflicts_thread, "#f59e0b", "#d97706")
         self.btn_mc.pack(fill=tk.X, padx=15, pady=3)
+        
+        self.btn_expectimax_tower = self.create_styled_button(ctrl_frame, "Xếp Trụ (Expectimax)", self.start_expectimax_tower_placement, "#ca8a04", "#a16207")
+        self.btn_expectimax_tower.pack(fill=tk.X, padx=15, pady=3)
         
         self.btn_reset = self.create_styled_button(ctrl_frame, "Reset Lưới", self.reset_grid, "#ef4444", "#dc2626")
         self.btn_reset.pack(fill=tk.X, padx=15, pady=3)
@@ -260,6 +265,11 @@ class TowerDefenseGUI:
         self.log_area.pack(fill=tk.BOTH, expand=True, padx=10, pady=(5, 10))
         self.log_area.insert(tk.END, "Sẵn sàng đón nhận log thuật toán...\n")
         self.log_area.config(state=tk.DISABLED)
+        
+        # Configure path colors and text tags for log area
+        self.path_colors = ["#3b82f6", "#10b981", "#f59e0b", "#ec4899", "#8b5cf6", "#06b6d4", "#f97316"]
+        for idx, color in enumerate(self.path_colors):
+            self.log_area.tag_config(f"color_{idx}", foreground=color)
         
         # 4. Status Bar (bottom)
         self.status_bar = tk.Frame(self.root, bg="#0f172a", bd=1, relief=tk.FLAT)
@@ -349,7 +359,16 @@ class TowerDefenseGUI:
                                                  outline="#06b6d4", width=2, tags="grid_elements")
 
         # Redraw final path connecting line if path exists
-        if len(self.current_path) > 1:
+        if getattr(self, "all_found_paths", None):
+            for idx, p in enumerate(self.all_found_paths):
+                if len(p) > 1:
+                    points = [(px * self.cell_size + self.cell_size // 2, py * self.cell_size + self.cell_size // 2) for px, py in p]
+                    color = self.path_colors[idx % len(self.path_colors)]
+                    for i in range(len(points) - 1):
+                        p1 = points[i]
+                        p2 = points[i+1]
+                        self.canvas.create_line(p1[0], p1[1], p2[0], p2[1], fill=color, width=3, capstyle=tk.ROUND, tags="path_elements")
+        elif len(self.current_path) > 1:
             points = []
             for px, py in self.current_path:
                 cx = px * self.cell_size + self.cell_size // 2
@@ -596,15 +615,34 @@ class TowerDefenseGUI:
             self.write_to_log("⚠️ Chưa tìm được đường đi! Hãy bấm 'Tìm Đường Lại' trước.\n")
             return
             
-        self.write_to_log("\n--- Bắt đầu đấu trí Minimax cho Creep ---\n")
-        from algorithms import minimax
-        
-        best_creep, minimax_val, log_steps = minimax.decide_optimal_creep(self.map_manager, self.current_path)
-        
-        for step in log_steps:
-            self.write_to_log(step + "\n")
+        selected_alg = self.alg_var.get()
+        if selected_alg == "Expectimax":
+            self.write_to_log("\n--- Bắt đầu đấu trí Expectimax cho Creep ---\n")
+            from algorithms import expectimax_spawner
+            res = expectimax_spawner.decide_optimal_creep_expectimax(self.map_manager, self.current_path)
+            if isinstance(res, tuple):
+                best_creep, expected_hp, log_steps = res
+            else:
+                best_creep = res
+                expected_hp, _ = expectimax_spawner.evaluate_creep_expectimax(best_creep, self.map_manager, self.current_path)
+                log_steps = []
+                
+            for step in log_steps:
+                self.write_to_log(step + "\n")
+                
+            max_hp = 200.0 if best_creep == "Tanky" else (60.0 if best_creep == "Fast" else 100.0)
+            survival_rate = (expected_hp / max_hp) * 100.0 if max_hp > 0 else 0.0
+            self.write_to_log(f"🎲 Expectimax chọn loại quái: {best_creep.upper()} (HP dự báo: {expected_hp:.1f}/{max_hp:.0f} - Tỷ lệ sống sót: {survival_rate:.1f}%)\n")
+        else:
+            self.write_to_log("\n--- Bắt đầu đấu trí Minimax cho Creep ---\n")
+            from algorithms import minimax
             
-        self.write_to_log(f"🤖 AI chọn loại quái: {best_creep.upper()} (Điểm đánh giá Minimax: {minimax_val:.1f})\n")
+            best_creep, minimax_val, log_steps = minimax.decide_optimal_creep(self.map_manager, self.current_path)
+            
+            for step in log_steps:
+                self.write_to_log(step + "\n")
+                
+            self.write_to_log(f"🤖 AI chọn loại quái: {best_creep.upper()} (Điểm đánh giá Minimax: {minimax_val:.1f})\n")
         
         self.enemy_type = best_creep
         if best_creep == "Tanky":
@@ -639,7 +677,7 @@ class TowerDefenseGUI:
         self.run_animation_step()
 
     def start_all_paths_thread(self):
-        """Spawns background thread to count all simple paths using Backtracking DFS."""
+        """Spawns background thread to count all simple paths using Backtracking DFS or AND-OR strategy extraction."""
         if self.is_simulating:
             self.write_to_log("⚠️ Vui lòng chờ mô phỏng kẻ địch chạy xong!\n")
             return
@@ -656,14 +694,24 @@ class TowerDefenseGUI:
         self.set_buttons_state(tk.DISABLED)
         
         def run_all_paths_bg():
-            from algorithms import backtracking
             try:
-                paths = backtracking.solve_all_paths(
-                    self.map_manager.start,
-                    self.map_manager.goal,
-                    self.map_manager,
-                    max_steps=2000
-                )
+                if self.alg_var.get() == "AND-OR Search":
+                    from algorithms import and_or
+                    paths = and_or.solve(
+                        self.map_manager.start,
+                        self.map_manager.goal,
+                        self.map_manager,
+                        delay=self.pathfinder.delay,
+                        return_all=True
+                    )
+                else:
+                    from algorithms import backtracking
+                    paths = backtracking.solve_all_paths(
+                        self.map_manager.start,
+                        self.map_manager.goal,
+                        self.map_manager,
+                        max_steps=50000
+                    )
                 self.ui_queue.put(('all_paths_completed', paths))
             except Exception as e:
                 self.ui_queue.put(('error', str(e)))
@@ -723,7 +771,34 @@ class TowerDefenseGUI:
         self.btn_reset.config(state=state)
         self.btn_sa.config(state=state)
         self.btn_mc.config(state=state)
+        self.btn_expectimax_tower.config(state=state)
         self.btn_all_paths.config(state=state)
+
+    def start_expectimax_tower_placement(self):
+        """Runs Expectimax search to place the optimal tower adjacent to current_path."""
+        if self.is_simulating:
+            self.write_to_log("⚠️ Vui lòng chờ mô phỏng kẻ địch chạy xong!\n")
+            return
+            
+        if not self.current_path:
+            self.write_to_log("⚠️ Chưa tìm được đường đi! Hãy bấm 'Tìm Đường Lại' trước.\n")
+            return
+            
+        self.write_to_log("\n--- Bắt đầu xếp trụ bằng Expectimax ---\n")
+        from algorithms import expectimax_defender
+        
+        best_pos, best_tower_type, max_dmg, log_steps = expectimax_defender.decide_optimal_tower_expectimax(self.map_manager, self.current_path)
+        
+        for step in log_steps:
+            self.write_to_log(step + "\n")
+            
+        if best_pos and best_tower_type:
+            if self.map_manager.add_tower(best_pos[0], best_pos[1], best_tower_type):
+                self.write_to_log(f"✅ Đã tự động đặt {best_tower_type} tại ô {best_pos}\n")
+                self.redraw_grid()
+                self.status_lbl.config(text=f"Trạng thái: Đã đặt trụ {best_tower_type} tại {best_pos}")
+            else:
+                self.write_to_log(f"❌ Không thể đặt trụ tại ô {best_pos}\n")
 
     def start_enemy_simulation(self):
         """Starts the enemy movement along the current_path."""
@@ -958,6 +1033,8 @@ class TowerDefenseGUI:
         """Clears search footprints (open/closed colors) and active path."""
         self.search_node_states.clear()
         self.current_path.clear()
+        if hasattr(self, 'all_found_paths') and self.all_found_paths is not None:
+            self.all_found_paths.clear()
         self.enemy_pos = None
         self.enemy_path_index = 0
         self.redraw_grid()
@@ -1011,10 +1088,23 @@ class TowerDefenseGUI:
                 
                 if path:
                     self.current_path = path
+                    if hasattr(self, 'all_found_paths') and self.all_found_paths is not None:
+                        self.all_found_paths.clear()
+                        
+                    if self.alg_var.get() == "AND-OR Search":
+                        self.log_area.config(state=tk.NORMAL)
+                        self.log_area.delete("1.0", tk.END)
+                        p_str = " -> ".join(f"({x},{y})" for x, y in path)
+                        self.log_area.insert(tk.END, f"🎯 Đường đi chọn từ AND-OR Search: {p_str}\n\n")
+                        self.log_area.see(tk.END)
+                        self.log_area.config(state=tk.DISABLED)
+                        
                     self.status_lbl.config(text=f"Trạng thái: Tìm đường hoàn tất! Độ dài: {len(path)}")
                     self.set_led_color("#10b981")
                 else:
                     self.current_path = []
+                    if hasattr(self, 'all_found_paths') and self.all_found_paths is not None:
+                        self.all_found_paths.clear()
                     self.status_lbl.config(text="Trạng thái: Đường đi không khả thi!")
                     self.set_led_color("#ef4444")
                     
@@ -1043,14 +1133,30 @@ class TowerDefenseGUI:
                 self.set_led_color("#10b981")
                 
                 if all_paths:
-                    self.write_to_log(f"✅ Tìm thấy tất cả {len(all_paths)} đường đi bằng Backtracking DFS.\n")
-                    self.status_lbl.config(text=f"Trạng thái: DFS tìm thấy {len(all_paths)} đường đi.")
-                    # Show the first found path as current active path
+                    self.all_found_paths = all_paths
                     self.current_path = all_paths[0]
+                    self.log_area.config(state=tk.NORMAL)
+                    self.log_area.delete("1.0", tk.END)
+                    
+                    alg_name = self.alg_var.get()
+                    self.log_area.insert(tk.END, f"✅ Tìm thấy tất cả {len(all_paths)} đường đi bằng {alg_name}:\n\n")
+                    
+                    for idx, p in enumerate(all_paths, start=1):
+                        p_str = " -> ".join(f"({x},{y})" for x, y in p)
+                        path_text_string = f"Đường đi {idx}: {p_str}\n\n"
+                        tag_name = f"color_{(idx-1) % len(self.path_colors)}"
+                        self.log_area.insert(tk.END, path_text_string, tag_name)
+                        
+                    self.log_area.see(tk.END)
+                    self.log_area.config(state=tk.DISABLED)
+                    
+                    self.status_lbl.config(text=f"Trạng thái: {alg_name} tìm thấy {len(all_paths)} đường đi.")
                 else:
                     self.write_to_log("❌ Không tìm thấy đường đi khả thi nào!\n")
                     self.status_lbl.config(text="Trạng thái: Không tìm thấy đường đi.")
                     self.current_path = []
+                    if hasattr(self, 'all_found_paths') and self.all_found_paths is not None:
+                        self.all_found_paths.clear()
                 self.redraw_grid()
                 
             elif item_type == 'error':
