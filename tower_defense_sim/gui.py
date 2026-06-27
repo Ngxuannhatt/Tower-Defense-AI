@@ -41,7 +41,7 @@ class TowerDefenseGUI:
         
         # Configure root window
         self.root.title("Tower Defense Pathfinding Simulator")
-        self.root.geometry("1240x720")
+        self.root.geometry("1300x720")
         self.root.configure(bg="#0f172a")  # Slate 900
         
         # UI Queue for thread-safe updates
@@ -86,7 +86,8 @@ class TowerDefenseGUI:
         self.redraw_grid()
 
     def load_assets(self):
-        """Loads all Kenney 2D tileset sprites, subsamples them, and caches rotations."""
+        """Loads all Kenney 2D tileset sprites, subsamples them, and caches rotations using PIL."""
+        from PIL import Image, ImageTk
         self.assets = {}
         assets_base_dir = os.path.dirname(os.path.abspath(__file__))
         default_size_dir = os.path.join(assets_base_dir, "assets", "Default size")
@@ -122,18 +123,22 @@ class TowerDefenseGUI:
             
             if os.path.exists(filepath):
                 try:
-                    # Load and subsample 64x64 -> 32x32
-                    img = tk.PhotoImage(file=filepath).subsample(2, 2)
+                    # Open using PIL and resize to 32x32
+                    pil_img = Image.open(filepath).convert("RGBA").resize((32, 32), Image.Resampling.LANCZOS)
+                    img = ImageTk.PhotoImage(pil_img)
                     self.assets[name] = img
-                    
-                    # Pre-calculate 4 rotations (0, 90, 180, 270)
                     self.assets[f"{name}_0"] = img
                     
                     # We only rotate elements that actually rotate: turrets and tank parts
                     if "turret" in name or "tank" in name:
-                        self.assets[f"{name}_90"] = rotate_photo_image(img, 90)
-                        self.assets[f"{name}_180"] = rotate_photo_image(img, 180)
-                        self.assets[f"{name}_270"] = rotate_photo_image(img, 270)
+                        # PIL rotates counter-clockwise, so negative angles for clockwise
+                        img_90 = ImageTk.PhotoImage(pil_img.rotate(-90))
+                        img_180 = ImageTk.PhotoImage(pil_img.rotate(-180))
+                        img_270 = ImageTk.PhotoImage(pil_img.rotate(-270))
+                        
+                        self.assets[f"{name}_90"] = img_90
+                        self.assets[f"{name}_180"] = img_180
+                        self.assets[f"{name}_270"] = img_270
                 except Exception as e:
                     print(f"Error loading asset {name} ({filename}): {e}")
             else:
@@ -236,11 +241,13 @@ class TowerDefenseGUI:
         self.grid_frame = tk.Frame(main_frame, bg="#0f172a")
         self.grid_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
         
-        # Calculate cell size based on grid 20x20 inside 640x640
+        # Calculate cell size based on grid 20x20 inside 640x640 + offsets for labels
         self.grid_size = 20
         self.cell_size = 32
-        self.canvas_width = self.grid_size * self.cell_size
-        self.canvas_height = self.grid_size * self.cell_size
+        self.offset_x = 24
+        self.offset_y = 24
+        self.canvas_width = self.grid_size * self.cell_size + self.offset_x
+        self.canvas_height = self.grid_size * self.cell_size + self.offset_y
         
         self.canvas = tk.Canvas(self.grid_frame, width=self.canvas_width, height=self.canvas_height, bg="#020617", highlightthickness=1, highlightbackground="#334155")
         self.canvas.pack(anchor=tk.CENTER, expand=True)
@@ -250,6 +257,8 @@ class TowerDefenseGUI:
         self.canvas.bind("<B1-Motion>", self.on_canvas_left_drag)
         self.canvas.bind("<Button-3>", self.on_canvas_right_click)
         self.canvas.bind("<B3-Motion>", self.on_canvas_right_drag)
+        self.canvas.bind("<Motion>", self.on_canvas_mouse_move)
+        self.canvas.bind("<Leave>", lambda e: self.coord_lbl.config(text="Tọa độ: --"))
         
         # 3. Right Panel: Steps Monitor (width ~320px)
         monitor_frame = tk.Frame(main_frame, bg="#1e293b", bd=1, relief=tk.FLAT)
@@ -282,6 +291,9 @@ class TowerDefenseGUI:
         
         self.status_lbl = tk.Label(self.status_bar, text="Trạng thái: Sẵn sàng", bg="#0f172a", fg="#94a3b8", font=("Segoe UI", 9, "bold"))
         self.status_lbl.pack(side=tk.LEFT)
+        
+        self.coord_lbl = tk.Label(self.status_bar, text="Tọa độ: --", bg="#0f172a", fg="#3b82f6", font=("Segoe UI", 9, "bold"))
+        self.coord_lbl.pack(side=tk.RIGHT, padx=(0, 15))
 
     def set_led_color(self, color):
         self.led.delete("all")
@@ -310,12 +322,26 @@ class TowerDefenseGUI:
         self.canvas.delete("grid_elements")
         self.canvas.delete("path_elements")
         
+        # Draw grid labels background (top and left borders)
+        self.canvas.create_rectangle(0, 0, self.canvas_width, self.offset_y, fill="#0f172a", outline="", tags="grid_elements")
+        self.canvas.create_rectangle(0, 0, self.offset_x, self.canvas_height, fill="#0f172a", outline="", tags="grid_elements")
+        
+        # Draw column labels (0 to width-1) at the top
+        for x in range(self.map_manager.width):
+            cx = x * self.cell_size + self.offset_x + self.cell_size // 2
+            self.canvas.create_text(cx, self.offset_y // 2, text=str(x), fill="#94a3b8", font=("Segoe UI", 8, "bold"), tags="grid_elements")
+            
+        # Draw row labels (0 to height-1) on the left
+        for y in range(self.map_manager.height):
+            cy = y * self.cell_size + self.offset_y + self.cell_size // 2
+            self.canvas.create_text(self.offset_x // 2, cy, text=str(y), fill="#94a3b8", font=("Segoe UI", 8, "bold"), tags="grid_elements")
+            
         # Redraw all cells
         for x in range(self.map_manager.width):
             for y in range(self.map_manager.height):
                 coord = (x, y)
-                x1 = x * self.cell_size
-                y1 = y * self.cell_size
+                x1 = x * self.cell_size + self.offset_x
+                y1 = y * self.cell_size + self.offset_y
                 cx = x1 + self.cell_size // 2
                 cy = y1 + self.cell_size // 2
                 
@@ -358,11 +384,22 @@ class TowerDefenseGUI:
                     self.canvas.create_rectangle(x1 + 2, y1 + 2, x1 + self.cell_size - 2, y1 + self.cell_size - 2,
                                                  outline="#06b6d4", width=2, tags="grid_elements")
 
+        # Draw grid lines on top of the tiles/obstacles
+        # Vertical grid lines
+        for x in range(self.map_manager.width + 1):
+            x_pos = x * self.cell_size + self.offset_x
+            self.canvas.create_line(x_pos, self.offset_y, x_pos, self.canvas_height, fill="#334155", width=1, tags="grid_elements")
+            
+        # Horizontal grid lines
+        for y in range(self.map_manager.height + 1):
+            y_pos = y * self.cell_size + self.offset_y
+            self.canvas.create_line(self.offset_x, y_pos, self.canvas_width, y_pos, fill="#334155", width=1, tags="grid_elements")
+
         # Redraw final path connecting line if path exists
         if getattr(self, "all_found_paths", None):
             for idx, p in enumerate(self.all_found_paths):
                 if len(p) > 1:
-                    points = [(px * self.cell_size + self.cell_size // 2, py * self.cell_size + self.cell_size // 2) for px, py in p]
+                    points = [(px * self.cell_size + self.offset_x + self.cell_size // 2, py * self.cell_size + self.offset_y + self.cell_size // 2) for px, py in p]
                     color = self.path_colors[idx % len(self.path_colors)]
                     for i in range(len(points) - 1):
                         p1 = points[i]
@@ -371,8 +408,8 @@ class TowerDefenseGUI:
         elif len(self.current_path) > 1:
             points = []
             for px, py in self.current_path:
-                cx = px * self.cell_size + self.cell_size // 2
-                cy = py * self.cell_size + self.cell_size // 2
+                cx = px * self.cell_size + self.offset_x + self.cell_size // 2
+                cy = py * self.cell_size + self.offset_y + self.cell_size // 2
                 points.append((cx, cy))
             
             # Draw line segments to make path look premium (glowing yellow/gold line)
@@ -384,8 +421,8 @@ class TowerDefenseGUI:
         # Draw active laser beams
         if self.active_lasers:
             for tx, ty, ecx, ecy, color in self.active_lasers:
-                tcx = tx * self.cell_size + self.cell_size // 2
-                tcy = ty * self.cell_size + self.cell_size // 2
+                tcx = tx * self.cell_size + self.offset_x + self.cell_size // 2
+                tcy = ty * self.cell_size + self.offset_y + self.cell_size // 2
                 self.canvas.create_line(tcx, tcy, ecx, ecy, fill=color, width=3, capstyle=tk.ROUND, tags="path_elements")
             # Clear lasers so they only flash for one frame
             self.active_lasers.clear()
@@ -400,8 +437,8 @@ class TowerDefenseGUI:
             return
             
         ex, ey = self.enemy_pos
-        ecx = ex * self.cell_size + self.cell_size // 2
-        ecy = ey * self.cell_size + self.cell_size // 2
+        ecx = ex * self.cell_size + self.offset_x + self.cell_size // 2
+        ecy = ey * self.cell_size + self.offset_y + self.cell_size // 2
         
         enemy_type = getattr(self, "enemy_type", "Normal")
         if enemy_type == "Fast":
@@ -449,9 +486,17 @@ class TowerDefenseGUI:
 
     def get_cell_coord(self, event):
         """Converts pixel coordinate on canvas to grid coordinates."""
-        x = event.x // self.cell_size
-        y = event.y // self.cell_size
+        x = (event.x - self.offset_x) // self.cell_size
+        y = (event.y - self.offset_y) // self.cell_size
         return x, y
+
+    def on_canvas_mouse_move(self, event):
+        """Updates the coordinate label in the status bar based on mouse hover position."""
+        x, y = self.get_cell_coord(event)
+        if 0 <= x < self.map_manager.width and 0 <= y < self.map_manager.height:
+            self.coord_lbl.config(text=f"Tọa độ: ({x}, {y})")
+        else:
+            self.coord_lbl.config(text="Tọa độ: --")
 
     def on_canvas_left_click(self, event):
         """Places a tower on left click."""
@@ -893,7 +938,7 @@ class TowerDefenseGUI:
             cx, cy = int(dest_x), int(dest_y)
             alg_name = self.alg_var.get()
             
-            if alg_name in ["Expectimax", "AND-OR Search"] or getattr(self, "enemy_type", "Normal") in ["Fast", "Tanky"]:
+            if True:
                 import random
                 total_damage = 0.0
                 frozen_by_tower = False
@@ -913,6 +958,7 @@ class TowerDefenseGUI:
                             dmg = 8.0
                         else:
                             dmg = 10.0
+                        dmg = dmg / 15.0  # Apply balancing scale factor
                         total_damage += dmg
                         self.write_to_log(f"💥 Tháp Basic tại ({tx},{ty}) bắn: {dmg:.1f} sát thương!\n")
                     elif t_type == "Fire" and dist <= 4.0:
@@ -924,6 +970,7 @@ class TowerDefenseGUI:
                             dmg = 27.0
                         else:
                             dmg = 18.0
+                        dmg = dmg / 15.0  # Apply balancing scale factor
                         
                         if random.random() < 0.40 and enemy_type == "Normal":
                             total_damage += dmg * 1.6
@@ -940,6 +987,7 @@ class TowerDefenseGUI:
                             dmg = 7.6
                         else:
                             dmg = 9.5
+                        dmg = dmg / 15.0  # Apply balancing scale factor
                         
                         if random.random() < 0.30:
                             total_damage += dmg * 2.0
@@ -960,8 +1008,8 @@ class TowerDefenseGUI:
                         self.tower_turret_angles[(tx, ty)] = t_angle
                         
                         # Add laser beam flash effect
-                        ecx = cx * self.cell_size + self.cell_size // 2
-                        ecy = cy * self.cell_size + self.cell_size // 2
+                        ecx = cx * self.cell_size + self.offset_x + self.cell_size // 2
+                        ecy = cy * self.cell_size + self.offset_y + self.cell_size // 2
                         self.active_lasers.append((tx, ty, ecx, ecy, laser_color))
                             
                 if total_damage > 0:

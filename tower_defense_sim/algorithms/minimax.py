@@ -39,12 +39,15 @@ def evaluate_creep_survival(creep_type: str, map_manager, path: list) -> float:
                 else:
                     damage += 9.5
                     
+    # Apply balancing scale factor (towers deal 15x less damage per step to make paths survivable)
+    damage = damage / 15.0
+
     if creep_type == "Fast":
-        return max(0.0, 60.0 - damage)
+        return 60.0 - damage
     elif creep_type == "Tanky":
-        return max(0.0, 200.0 - damage)
+        return 200.0 - damage
     else:
-        return max(0.0, 100.0 - damage)
+        return 100.0 - damage
 
 def minimax(map_manager, path: list, depth: int, is_maximizing: bool, creep_type: str = None, log_steps: list = None):
     """

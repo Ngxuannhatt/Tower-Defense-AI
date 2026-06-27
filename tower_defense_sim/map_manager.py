@@ -98,7 +98,7 @@ class MapManager:
                 expected_damage += 18.0
             elif t_type == "Ice" and dist <= 2.0:
                 expected_damage += 9.5
-        return expected_damage
+        return expected_damage / 15.0
 
     def get_freeze_probability(self, x, y):
         """

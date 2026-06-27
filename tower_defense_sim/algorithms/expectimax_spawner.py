@@ -28,7 +28,7 @@ def get_base_damage(creep_type: str, map_manager, x: int, y: int) -> float:
                 damage += 7.6
             else:
                 damage += 9.5
-    return damage
+    return damage / 15.0
 
 def evaluate_creep_expectimax(creep_type: str, map_manager, path: list):
     """
@@ -49,7 +49,7 @@ def evaluate_creep_expectimax(creep_type: str, map_manager, path: list):
         exp_step_dmg = base_dmg * (1.0 + freeze_prob)
         total_expected_damage += exp_step_dmg
 
-    expected_hp = max(0.0, max_hp - total_expected_damage)
+    expected_hp = max_hp - total_expected_damage
     return expected_hp, total_expected_damage
 
 def decide_optimal_creep_expectimax(map_manager, current_path: list):
