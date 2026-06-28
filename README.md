@@ -6,7 +6,7 @@
   1. **Nguyễn Xuân Nhật** - MSSV: `24110293`
   2. **Nguyễn Anh Quân** - MSSV: `24110309`
   3. **Nguyễn Thành Huy** - MSSV: `24110222`
-- **Lớp học:** Nhập môn Trí tuệ Nhân tạo
+- **Môn:** Nhập môn Trí tuệ Nhân tạo
 - **Dự án:** Tower Defense AI Visualizer
 
 ---
