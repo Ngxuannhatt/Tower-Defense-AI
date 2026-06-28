@@ -6,7 +6,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.append(current_dir)
 
-from algorithms import astar, incremental_astar, dstar, bfs, greedy_best_first, backtracking, expectimax, and_or, dfs, belief_state_search, hill_climbing,simulated_annealing,alpha_beta, IDAstar, Local_Beam_Search, UCS, forward_checking, DFS_Searching_for_partially_observable_problems
+from algorithms import astar, bfs, greedy_best_first, backtracking, expectimax, and_or, dfs, belief_state_search, hill_climbing,simulated_annealing,alpha_beta, IDAstar, Local_Beam_Search, UCS, forward_checking, DFS_Searching_for_partially_observable_problems
 
 
 class Pathfinder:
@@ -45,14 +45,6 @@ class Pathfinder:
         if self.current_algorithm == "A*":
             return astar.solve(start, goal, self.map_manager, delay=self.delay)
             
-        elif self.current_algorithm == "Incremental A*":
-            # Pass grid, delay, and force_init to the LPA* solver
-            return incremental_astar.solve(start, goal, self.map_manager, delay=self.delay, force_init=force_init)
-            
-        elif self.current_algorithm == "D*":
-            # Pass grid, delay, and force_init to the D* Lite solver
-            return dstar.solve(start, goal, self.map_manager, delay=self.delay, force_init=force_init)
-            
         elif self.current_algorithm == "BFS":
             return bfs.solve(start, goal, self.map_manager, delay=self.delay)
             
@@ -83,7 +75,7 @@ class Pathfinder:
         elif self.current_algorithm == "Local_Beam_Search":
             return Local_Beam_Search.solve(start, goal, self.map_manager, delay=self.delay)
             
-        elif self.current_algorithm in ["UCS", "Dijkstra"]:
+        elif self.current_algorithm in ["UCS"]:
             return UCS.solve(start, goal, self.map_manager, delay=self.delay)
             
         elif self.current_algorithm == "forward_checking":
