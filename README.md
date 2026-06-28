@@ -1,4 +1,4 @@
-# BÀI TẬP LỚN MÔN NHẬP MÔN TRÍ TUỆ NHÂN TẠO (INTRODUCTION TO AI)
+## 📌 Final project - Tower-Defense-AI
 
 ---
 
@@ -11,7 +11,7 @@
 
 ---
 
-## 📌 Tổng quan dự án
+**Tổng quan dự án**
 
 Dự án này triển khai một ứng dụng **Mô phỏng và Trực quan hóa các Thuật toán Tìm kiếm (Search Algorithms Visualizer)** áp dụng vào trò chơi **Thủ thành (Tower Defense)** kinh điển. 
 
