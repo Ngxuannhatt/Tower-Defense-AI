@@ -182,13 +182,13 @@ class TowerDefenseGUI:
         tk.Label(ctrl_frame, text="Thuật toán tìm đường:", bg="#1e293b", fg="#94a3b8", font=("Segoe UI", 9, "bold")).pack(anchor=tk.W, padx=15, pady=(5, 0))
         self.alg_var = tk.StringVar(value="A*")
         self.alg_combo = ttk.Combobox(ctrl_frame, textvariable=self.alg_var, 
-                                       values=["A*", "BFS", "DFS", "Greedy Best-First", "Backtracking (DFS)", "Belief State Search", "Steepest Ascent Hill Climbing", "Expectimax","Simulated Annealing", "AND-OR Search", "alpha_beta","IDAstar","Local_Beam_Search","UCS", "forward_checking","DFS_Searching_for_partially_observable_problems" ], 
+                                       values=["A*", "BFS", "DFS", "Greedy Best-First", "Backtracking (DFS)", "Belief State Search", "Steepest Ascent Hill Climbing", "Simulated Annealing", "AND-OR Search", "alpha_beta","IDAstar","Local_Beam_Search","UCS", "forward_checking","DFS_Searching_for_partially_observable_problems" ], 
                                        state="readonly")
         self.alg_combo.pack(fill=tk.X, padx=15, pady=(2, 5))
         self.alg_combo.bind("<<ComboboxSelected>>", self.on_algorithm_change)
         
         # Category info text for clarity
-        cat_info = "🔍 NHÓM THUẬT TOÁN:\n• Tìm đường: A*, DFS, Hill Climbing, SA, BFS\n• Trạng thái: Belief State Search\n• AI Xác suất: Expectimax, AND-OR"
+        cat_info = "🔍 NHÓM THUẬT TOÁN:\n• Tìm đường: A*, DFS, Hill Climbing, SA, BFS\n• Trạng thái: Belief State Search\n• AI Xác suất: AND-OR"
         cat_lbl = tk.Label(ctrl_frame, text=cat_info, bg="#1e293b", fg="#94a3b8", font=("Segoe UI", 8), justify=tk.LEFT)
         cat_lbl.pack(fill=tk.X, padx=15, pady=(0, 10))
         
@@ -211,6 +211,9 @@ class TowerDefenseGUI:
         self.btn_all_paths = self.create_styled_button(ctrl_frame, "Tìm Mọi Đường Đi (DFS)", self.start_all_paths_thread, "#06b6d4", "#0891b2")
         self.btn_all_paths.pack(fill=tk.X, padx=15, pady=3)
         
+        self.btn_select_best_path = self.create_styled_button(ctrl_frame, "Chọn Đường Ít Tốn Máu (Expectimax)", self.start_select_best_path_thread, "#14b8a6", "#0d9488")
+        self.btn_select_best_path.pack(fill=tk.X, padx=15, pady=3)
+        
         self.btn_simulate = self.create_styled_button(ctrl_frame, "Bắt Đầu Mô Phỏng", self.start_enemy_simulation, "#10b981", "#059669")
         self.btn_simulate.pack(fill=tk.X, padx=15, pady=3)
         
@@ -223,8 +226,6 @@ class TowerDefenseGUI:
         self.btn_mc = self.create_styled_button(ctrl_frame, "Xếp Trụ (Min-Conflicts)", self.start_min_conflicts_thread, "#f59e0b", "#d97706")
         self.btn_mc.pack(fill=tk.X, padx=15, pady=3)
         
-        self.btn_expectimax_tower = self.create_styled_button(ctrl_frame, "Xếp Trụ (Expectimax)", self.start_expectimax_tower_placement, "#ca8a04", "#a16207")
-        self.btn_expectimax_tower.pack(fill=tk.X, padx=15, pady=3)
         
         self.btn_reset = self.create_styled_button(ctrl_frame, "Reset Lưới", self.reset_grid, "#ef4444", "#dc2626")
         self.btn_reset.pack(fill=tk.X, padx=15, pady=3)
@@ -755,13 +756,60 @@ class TowerDefenseGUI:
                         self.map_manager.start,
                         self.map_manager.goal,
                         self.map_manager,
-                        max_steps=50000
+                        max_steps=1000000
                     )
                 self.ui_queue.put(('all_paths_completed', paths))
             except Exception as e:
                 self.ui_queue.put(('error', str(e)))
                 
         threading.Thread(target=run_all_paths_bg, daemon=True).start()
+
+    def start_select_best_path_thread(self):
+        """Generates all candidate paths (if not existing) and runs Expectimax evaluator to select optimal path."""
+        if self.is_simulating:
+            self.write_to_log("⚠️ Vui lòng chờ mô phỏng kẻ địch chạy xong!\n")
+            return
+            
+        self.clear_search_visuals()
+        self.set_led_color("#f59e0b")
+        self.status_lbl.config(text="Trạng thái: Expectimax đang chọn đường ít tốn máu nhất...")
+        
+        self.log_area.config(state=tk.NORMAL)
+        self.log_area.delete("1.0", tk.END)
+        self.log_area.config(state=tk.DISABLED)
+        
+        self.set_buttons_state(tk.DISABLED)
+        
+        def run_select_best_bg():
+            try:
+                from algorithms import expectimax
+                if getattr(self, "all_found_paths", None) and len(self.all_found_paths) > 0:
+                    candidate_paths = self.all_found_paths
+                else:
+                    if self.alg_var.get() == "AND-OR Search":
+                        from algorithms import and_or
+                        candidate_paths = and_or.solve(
+                            self.map_manager.start,
+                            self.map_manager.goal,
+                            self.map_manager,
+                            delay=0.0,
+                            return_all=True
+                        )
+                    else:
+                        from algorithms import backtracking
+                        candidate_paths = backtracking.solve_all_paths(
+                            self.map_manager.start,
+                            self.map_manager.goal,
+                            self.map_manager,
+                            max_steps=1000000
+                        )
+                
+                best_path, min_dmg, remaining_hp, best_index = expectimax.select_best_path_from_candidates(candidate_paths, self.map_manager)
+                self.ui_queue.put(('best_path_select_completed', (best_path, min_dmg, remaining_hp, best_index, len(candidate_paths))))
+            except Exception as e:
+                self.ui_queue.put(('error', str(e)))
+                
+        threading.Thread(target=run_select_best_bg, daemon=True).start()
 
     def replan_during_movement(self):
         """
@@ -771,7 +819,7 @@ class TowerDefenseGUI:
         if not self.is_simulating or self.enemy_path_index >= len(self.current_path) - 1:
             return
             
-        # The enemy is heading towards this next node
+        curr_node = self.current_path[self.enemy_path_index]
         next_node = self.current_path[self.enemy_path_index + 1]
         
         # Check if the remaining path is blocked by the change
@@ -792,14 +840,19 @@ class TowerDefenseGUI:
             old_delay = self.pathfinder.delay
             self.pathfinder.set_delay(0.0)
             
-            # Resolve new path from the next node
-            new_path = self.pathfinder.find_path(start=next_node, force_init=False)
+            # Resolve new path from current unblocked position or next node
+            replan_start = curr_node if self.map_manager.is_obstacle(next_node[0], next_node[1]) else next_node
+            new_path = self.pathfinder.find_path(start=replan_start, force_init=False)
             self.pathfinder.set_delay(old_delay)
             
             if new_path:
-                # Merge the traversed path up to next_node with the new path
-                completed_part = self.current_path[:self.enemy_path_index + 2]
-                self.current_path = completed_part + new_path[1:]
+                # Merge the traversed path up to replan_start with the new path
+                if replan_start == curr_node:
+                    completed_part = self.current_path[:self.enemy_path_index]
+                    self.current_path = completed_part + new_path
+                else:
+                    completed_part = self.current_path[:self.enemy_path_index + 2]
+                    self.current_path = completed_part + new_path[1:]
                 self.write_to_log(f"✅ Tìm thấy đường đi mới thay thế! Kích thước: {len(self.current_path)}\n")
             else:
                 self.write_to_log("❌ ĐƯỜNG ĐI BỊ CHẶN HOÀN TOÀN! Không tìm thấy đường mới.\n")
@@ -816,34 +869,9 @@ class TowerDefenseGUI:
         self.btn_reset.config(state=state)
         self.btn_sa.config(state=state)
         self.btn_mc.config(state=state)
-        self.btn_expectimax_tower.config(state=state)
         self.btn_all_paths.config(state=state)
-
-    def start_expectimax_tower_placement(self):
-        """Runs Expectimax search to place the optimal tower adjacent to current_path."""
-        if self.is_simulating:
-            self.write_to_log("⚠️ Vui lòng chờ mô phỏng kẻ địch chạy xong!\n")
-            return
-            
-        if not self.current_path:
-            self.write_to_log("⚠️ Chưa tìm được đường đi! Hãy bấm 'Tìm Đường Lại' trước.\n")
-            return
-            
-        self.write_to_log("\n--- Bắt đầu xếp trụ bằng Expectimax ---\n")
-        from algorithms import expectimax_defender
-        
-        best_pos, best_tower_type, max_dmg, log_steps = expectimax_defender.decide_optimal_tower_expectimax(self.map_manager, self.current_path)
-        
-        for step in log_steps:
-            self.write_to_log(step + "\n")
-            
-        if best_pos and best_tower_type:
-            if self.map_manager.add_tower(best_pos[0], best_pos[1], best_tower_type):
-                self.write_to_log(f"✅ Đã tự động đặt {best_tower_type} tại ô {best_pos}\n")
-                self.redraw_grid()
-                self.status_lbl.config(text=f"Trạng thái: Đã đặt trụ {best_tower_type} tại {best_pos}")
-            else:
-                self.write_to_log(f"❌ Không thể đặt trụ tại ô {best_pos}\n")
+        if hasattr(self, 'btn_select_best_path'):
+            self.btn_select_best_path.config(state=state)
 
     def start_enemy_simulation(self):
         """Starts the enemy movement along the current_path."""
@@ -891,9 +919,15 @@ class TowerDefenseGUI:
         if self.enemy_path_index >= len(self.current_path) - 1:
             # Destination reached!
             self.is_simulating = False
-            self.write_to_log("🎉 Kẻ địch đã đến điểm đích thành công!\n")
-            self.status_lbl.config(text=f"Trạng thái: Về đích thành công! HP còn lại: {self.enemy_hp:.1f}")
-            self.set_led_color("#10b981")
+            curr_last = self.current_path[-1] if self.current_path else None
+            if curr_last == self.map_manager.goal:
+                self.write_to_log("🎉 Kẻ địch đã đến điểm đích thành công!\n")
+                self.status_lbl.config(text=f"Trạng thái: Về đích thành công! HP còn lại: {self.enemy_hp:.1f}")
+                self.set_led_color("#10b981")
+            else:
+                self.write_to_log("🛑 Kẻ địch dừng lại (chưa đến được đích).\n")
+                self.status_lbl.config(text="Trạng thái: Dừng lại trước đích!")
+                self.set_led_color("#ef4444")
             
             # Re-enable controls
             self.set_buttons_state(tk.NORMAL)
@@ -1031,27 +1065,7 @@ class TowerDefenseGUI:
                 # Update slow state
                 self.enemy_slowed = frozen_by_tower
                 self.status_lbl.config(text=f"Trạng thái: Kẻ địch di chuyển... HP: {self.enemy_hp:.1f}/{getattr(self, 'enemy_max_hp', 100.0)}")
-                
-                # AND-OR Search dynamic path rerouting
-                if alg_name == "AND-OR Search" and self.enemy_path_index < len(self.current_path):
-                    status = "slowed" if self.enemy_slowed else "normal"
-                    next_step = self.enemy_strategy.get((cx, cy, status))
-                    
-                    if next_step and next_step != self.current_path[self.enemy_path_index]:
-                        self.write_to_log(f"🔀 Nhánh rẽ chiến lược AND-OR: ({cx}, {cy}) -> {next_step} [Trạng thái: {status}]\n")
-                        
-                        completed = self.current_path[:self.enemy_path_index]
-                        path_suffix = [next_step]
-                        curr_node = next_step
-                        visited_suffix = {next_step}
-                        while curr_node != self.map_manager.goal:
-                            nxt = self.enemy_strategy.get((curr_node[0], curr_node[1], "normal"))
-                            if not nxt or nxt in visited_suffix:
-                                break
-                            path_suffix.append(nxt)
-                            visited_suffix.add(nxt)
-                            curr_node = nxt
-                        self.current_path = completed + path_suffix
+
         else:
             speed = getattr(self, "enemy_speed", 0.2)
             step_size = (speed * 0.5) if self.enemy_slowed else speed
@@ -1158,6 +1172,27 @@ class TowerDefenseGUI:
                     
                 self.redraw_grid()
                 
+            elif item_type == 'best_path_select_completed':
+                best_path, min_dmg, remaining_hp, best_idx, total_paths = data
+                self.set_buttons_state(tk.NORMAL)
+                
+                if best_path:
+                    self.current_path = best_path
+                    if hasattr(self, 'all_found_paths') and self.all_found_paths is not None:
+                        self.all_found_paths.clear()
+                        
+                    self.write_to_log(f"\n🏆 Expectimax đã chọn ĐƯỜNG ĐÍ SỐ {best_idx}/{total_paths} là đường tốt nhất!\n")
+                    self.write_to_log(f"📊 Dự báo: Sát thương kỳ vọng: {min_dmg:.1f} | HP còn lại: {remaining_hp:.1f}/100\n")
+                    self.write_to_log("🚀 Tự động kích hoạt mô phỏng quái di chuyển...\n")
+                    
+                    self.redraw_grid()
+                    self.start_enemy_simulation()
+                else:
+                    self.current_path = []
+                    self.status_lbl.config(text="Trạng thái: Không có đường đi khả thi!")
+                    self.set_led_color("#ef4444")
+                    self.redraw_grid()
+                    
             elif item_type == 'map_update':
                 self.redraw_grid()
                 

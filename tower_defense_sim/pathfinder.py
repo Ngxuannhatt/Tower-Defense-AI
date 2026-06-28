@@ -62,9 +62,6 @@ class Pathfinder:
         elif self.current_algorithm == "Backtracking (DFS)":
             return backtracking.solve(start, goal, self.map_manager, delay=self.delay)
             
-        elif self.current_algorithm == "Expectimax":
-            return expectimax.solve(start, goal, self.map_manager, delay=self.delay)
-            
         elif self.current_algorithm == "AND-OR Search":
             return and_or.solve(start, goal, self.map_manager, delay=self.delay)
             

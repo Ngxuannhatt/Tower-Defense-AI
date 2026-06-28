@@ -1,11 +1,13 @@
 import random
+import time
 import path_step_monitor
 
 def solve(start, goal, map_manager, delay=0.0, return_all=False):
     path_step_monitor.log_step(f"Khởi chạy AND_OR_GRAPH_SEARCH từ {start}")
     
-    MAX_DEPTH = 100
-    MAX_PATHS = 50
+    MAX_DEPTH = 80       # Reasonable depth limit to prevent infinite/long loop wandering
+    MAX_PATHS = 100      # Target maximum viable candidate paths to collect quickly
+    MAX_STEPS = 50000    # Safe step limit to prevent CPU freezing on large grids
     
     def goal_test(state):
         return state == goal
@@ -21,97 +23,47 @@ def solve(start, goal, map_manager, delay=0.0, return_all=False):
             return [("normal", action)]
 
     strategy_map = {}
-    failed_states = set()
-    memo_or = {}
-
-    def or_search(state, path, depth):
-        if goal_test(state):
-            return []
-            
-        if depth >= MAX_DEPTH:
-            h_dist = abs(state[0] - goal[0]) + abs(state[1] - goal[1])
-            if h_dist < 5:
-                return []
-            return None
-
-        if state in path or state in failed_states:
-            return None
-
-        if state in memo_or:
-            return memo_or[state]
-            
-        actions = get_actions(state)
-        # Sort actions by Manhattan distance to goal to explore optimal branches first
-        actions.sort(key=lambda a: abs(a[0] - goal[0]) + abs(a[1] - goal[1]))
-        
-        found_any = False
-        first_plan = None
-        
-        for action in actions:
-            result_states = get_results(state, action)
-            plan = and_search(result_states, path + [state], depth + 1)
-            if plan is not None:
-                found_any = True
-                if first_plan is None:
-                    first_plan = [action, plan]
-                    
-        if found_any:
-            memo_or[state] = first_plan
-            return first_plan
-        else:
-            failed_states.add(state)
-            memo_or[state] = None
-            return None
-
-    def and_search(states, path, depth):
-        plans = {}
-        
-        for env_status, next_node in states:
-            path_step_monitor.log_node_state(next_node[0], next_node[1], "open")
-            
-            plan_s = or_search(next_node, path, depth)
-            
-            if plan_s is None and next_node != goal:
-                return None
-                
-            plans[(env_status, next_node)] = plan_s
-            
-            if path:
-                parent = path[-1]
-                key = (parent[0], parent[1], env_status)
-                if key not in strategy_map:
-                    strategy_map[key] = []
-                if next_node not in strategy_map[key]:
-                    strategy_map[key].append(next_node)
-                
-        return plans
-
-    or_search(start, [], 0)
-
-    # Standalone path extraction helper traversing strategy_map along normal transitions
     all_extracted_paths = []
-
-    def extract_all_paths_from_strategy(current_node, current_path):
-        if len(all_extracted_paths) >= MAX_PATHS:
+    step_count = 0
+    visited_visuals = set()
+    
+    def find_all_strategy_paths(current_node, current_path, depth):
+        nonlocal step_count
+        step_count += 1
+        
+        if len(all_extracted_paths) >= MAX_PATHS or depth >= MAX_DEPTH or step_count > MAX_STEPS:
             return
+            
         if current_node == goal:
             full_p = current_path + [current_node]
             if full_p not in all_extracted_paths:
                 all_extracted_paths.append(full_p)
             return
 
-        key = (current_node[0], current_node[1], "normal")
-        next_nodes = strategy_map.get(key, [])
-        if not isinstance(next_nodes, list):
-            next_nodes = [next_nodes]
+        actions = get_actions(current_node)
+        # Sort actions by distance to goal to prioritize efficient paths
+        actions.sort(key=lambda a: abs(a[0] - goal[0]) + abs(a[1] - goal[1]))
 
-        for next_node in next_nodes:
-            if len(all_extracted_paths) >= MAX_PATHS:
-                break
-            if next_node not in current_path:
-                extract_all_paths_from_strategy(next_node, current_path + [current_node])
+        for action in actions:
+            if action not in current_path:
+                if delay > 0 and action not in visited_visuals:
+                    visited_visuals.add(action)
+                    path_step_monitor.log_node_state(action[0], action[1], "open")
+                    time.sleep(delay)
+                    
+                result_states = get_results(current_node, action)
+                for env_status, nxt in result_states:
+                    key = (current_node[0], current_node[1], env_status)
+                    if key not in strategy_map:
+                        strategy_map[key] = []
+                    if nxt not in strategy_map[key]:
+                        strategy_map[key].append(nxt)
+                
+                find_all_strategy_paths(action, current_path + [current_node], depth + 1)
+                if len(all_extracted_paths) >= MAX_PATHS or step_count > MAX_STEPS:
+                    break
 
-    extract_all_paths_from_strategy(start, [])
+    find_all_strategy_paths(start, [], 0)
     
     if all_extracted_paths:
         path_step_monitor.log_step(f"AND-OR Search: Tìm thấy chiến lược với {len(all_extracted_paths)} đường đi khả thi!")
@@ -128,14 +80,14 @@ def solve(start, goal, map_manager, delay=0.0, return_all=False):
         if return_all:
             return all_extracted_paths
 
-        # Highlight nodes of selected path
-        selected_path = all_extracted_paths[0]
+        # Highlight nodes of randomly selected path
+        selected_path = random.choice(all_extracted_paths)
+        path_step_monitor.log_step(f"🎲 AND-OR Search đã ngẫu nhiên chọn 1 đường đi trong số {len(all_extracted_paths)} đường khả thi!")
         for px, py in selected_path:
             if (px, py) != start and (px, py) != goal:
                 path_step_monitor.log_node_state(px, py, "path")
                 
         return selected_path
 
-    path_step_monitor.log_step("AND-OR Search: Không tìm thấy chiến lược khả thi trong giới hạn độ sâu!")
+    path_step_monitor.log_step("AND-OR Search: Không tìm thấy chiến lược khả thi trong giới hạn an toàn!")
     return None if not return_all else []
-
