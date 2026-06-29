@@ -87,6 +87,9 @@ class Pathfinder:
         elif self.current_algorithm == "Simulated Annealing":
             return simulated_annealing.solve(start, goal, self.map_manager, delay=self.delay)
             
+        elif self.current_algorithm == "Expectimax":
+            return expectimax.solve(start, goal, self.map_manager, delay=self.delay)
+            
         else:
             raise ValueError(f"Thuật toán không hợp lệ: {self.current_algorithm}")
 
