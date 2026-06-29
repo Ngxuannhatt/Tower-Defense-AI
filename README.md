@@ -1,4 +1,4 @@
-# BÀI TẬP LỚN MÔN NHẬP MÔN TRÍ TUỆ NHÂN TẠO (INTRODUCTION TO AI)
+## 📌 Final project - Tower-Defense-AI
 
 ---
 
@@ -6,12 +6,12 @@
   1. **Nguyễn Xuân Nhật** - MSSV: `24110293`
   2. **Nguyễn Anh Quân** - MSSV: `24110309`
   3. **Nguyễn Thành Huy** - MSSV: `24110222`
-- **Lớp học:** Nhập môn Trí tuệ Nhân tạo
+- **Môn:** Nhập môn Trí tuệ Nhân tạo
 - **Dự án:** Tower Defense AI Visualizer
 
 ---
 
-## 📌 Tổng quan dự án
+**Tổng quan dự án**
 
 Dự án này triển khai một ứng dụng **Mô phỏng và Trực quan hóa các Thuật toán Tìm kiếm (Search Algorithms Visualizer)** áp dụng vào trò chơi **Thủ thành (Tower Defense)** kinh điển. 
 
