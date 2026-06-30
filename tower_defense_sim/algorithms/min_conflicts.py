@@ -4,6 +4,12 @@ from algorithms import astar
 import path_step_monitor
 
 class CSP:
+    """
+    Lớp biểu diễn bài toán thỏa mãn ràng buộc (CSP - Constraint Satisfaction Problem).
+    - variables: Các biến cần gán giá trị (ở đây là danh sách tháp: T0, T1, ..., T17).
+    - domains: Miền giá trị cho từng biến (tất cả các ô tọa độ trống hợp lệ trên bản đồ).
+    - map_manager: Quản lý lưới bản đồ để cập nhật vị trí tháp phòng thủ.
+    """
     def __init__(self, map_manager, variables, domains):
         self.map_manager = map_manager
         self.variables = variables
@@ -11,37 +17,38 @@ class CSP:
 
 def get_conflicts(var, v, current, csp):
     """
-    Computes conflicts for the variable 'var' when placed at value 'v'.
-    Conflicts are defined as:
-    - Overlaps with other towers: +500
-    - Placement on Start or Goal node: +1000
-    - Hard constraint: path from Start to Goal is blocked: +100
+    Tính toán số lượng xung đột (hoặc điểm phạt) khi gán vị trí 'v' cho biến tháp 'var'.
+    Các loại xung đột/ràng buộc được lượng hóa bằng trọng số:
+    1. Trùng vị trí với các tháp khác (overlap): Phạt +500 điểm.
+    2. Đặt tháp lên điểm xuất phát (Start) hoặc điểm đích (Goal): Phạt +1000 điểm.
+    3. Tháp chặn hoàn toàn đường đi từ Start đến Goal (Ràng buộc cứng): Phạt +100 điểm.
     """
     conflicts = 0
     
-    # Overlap with other variables
+    # 1. Kiểm tra chồng lấn tọa độ với các tháp khác đã gán
     for other_var, other_val in current.items():
         if other_var != var and other_val == v:
             conflicts += 500
             
-    # Start or goal check
+    # 2. Kiểm tra đặt tháp đè lên điểm xuất phát hoặc đích
     if v == csp.map_manager.start or v == csp.map_manager.goal:
         conflicts += 1000
         
-    # Hard constraint: path blockage check.
-    # Temporarily reconstruct the grid with this assignment to check if path is blocked.
+    # 3. Kiểm tra ràng buộc cứng: Chặn lối đi của quái.
+    # Tạm thời xây dựng lại cấu hình bản đồ lưới với vị trí thử nghiệm mới này để chạy thử A*
     csp.map_manager.reset()
     for other_var, other_val in current.items():
         if other_var != var:
             csp.map_manager.add_tower(other_val[0], other_val[1], "Basic")
     csp.map_manager.add_tower(v[0], v[1], "Basic")
     
-    # Run A* silently to check path
+    # Chạy thuật toán A* ẩn (không log ra GUI) để xem quái có tìm được đường về đích không
     was_silenced = path_step_monitor.is_silenced()
     path_step_monitor.set_silenced(True)
     path = astar.solve(csp.map_manager.start, csp.map_manager.goal, csp.map_manager, delay=0.0)
     path_step_monitor.set_silenced(was_silenced)
     
+    # Nếu không tìm thấy đường đi (đường bị tháp chặn hoàn toàn), ghi nhận xung đột
     if not path:
         conflicts += 100
         
@@ -49,14 +56,19 @@ def get_conflicts(var, v, current, csp):
 
 def min_conflicts(csp, max_steps, update_ui_callback=None, log_callback=None):
     """
-    Min-conflicts CSP solver.
+    Thuật toán Min-Conflicts tối ưu hóa tìm kiếm cục bộ để giải bài toán CSP.
+    - Bước 1: Khởi tạo một phép gán hoàn tất ngẫu nhiên (gán bừa tọa độ cho 18 tháp).
+    - Bước 2: Ở mỗi bước lặp, tìm các tháp đang bị lỗi/xung đột (vi phạm ràng buộc).
+    - Bước 3: Nếu không còn tháp nào bị lỗi -> Bài toán đã được giải thành công! Trả về kết quả.
+    - Bước 4: Nếu vẫn còn tháp lỗi, chọn ngẫu nhiên một tháp bị lỗi và di chuyển nó tới ô
+              trong miền giá trị mà tại đó số lượng xung đột là ít nhất (minimized conflicts).
     """
-    # 1. Initialize random complete assignment
+    # 1. Tạo phép gán ngẫu nhiên ban đầu cho tất cả các tháp
     current = {}
     for var in csp.variables:
         current[var] = random.choice(csp.domains[var])
         
-    # Apply to map
+    # Đặt tháp lên bản đồ theo phép gán ngẫu nhiên ban đầu
     csp.map_manager.reset()
     for var, val in current.items():
         csp.map_manager.add_tower(val[0], val[1], "Basic")
@@ -65,41 +77,42 @@ def min_conflicts(csp, max_steps, update_ui_callback=None, log_callback=None):
         update_ui_callback()
         
     for step in range(1, max_steps + 1):
-        # Identify all conflicted variables
+        # Xác định tất cả các tháp đang bị lỗi/xung đột
         conflicted_vars = []
         for var in csp.variables:
             val = current[var]
             if get_conflicts(var, val, current, csp) > 0:
                 conflicted_vars.append(var)
                 
-        # If no conflicts, success!
+        # Nếu không còn tháp nào bị lỗi -> Xếp tháp thành công hoàn mỹ!
         if not conflicted_vars:
             if log_callback:
                 log_callback(f"Min-Conflicts: Đã tìm thấy cấu hình hợp lệ tại bước {step}!")
             return current
             
-        # Choose a conflicted variable randomly
+        # Chọn ngẫu nhiên một tháp đang bị lỗi để sửa vị trí
         var = random.choice(conflicted_vars)
         
-        # Find value that minimizes conflicts
+        # Tìm vị trí trong miền giá trị giúp giảm xung đột cho tháp này nhiều nhất
         best_val = current[var]
         min_conf = get_conflicts(var, best_val, current, csp)
         
-        # Sample the domain randomly to keep computation responsive
+        # Lấy mẫu ngẫu nhiên tối đa 50 ô trống trong miền giá trị để tính toán nhanh, tránh lag GUI
         domain_sample = random.sample(csp.domains[var], min(50, len(csp.domains[var])))
         if current[var] not in domain_sample:
             domain_sample.append(current[var])
             
         for v in domain_sample:
             conf = get_conflicts(var, v, current, csp)
+            # Nếu tìm thấy vị trí mới ít lỗi hơn vị trí cũ, ghi nhận lại
             if conf < min_conf:
                 min_conf = conf
                 best_val = v
                 
-        # Update assignment
+        # Cập nhật tọa độ mới cho tháp
         current[var] = best_val
         
-        # Apply to map
+        # Vẽ lại cấu hình tháp mới lên bản đồ
         csp.map_manager.reset()
         for v_name, v_coord in current.items():
             csp.map_manager.add_tower(v_coord[0], v_coord[1], "Basic")
@@ -118,7 +131,11 @@ def min_conflicts(csp, max_steps, update_ui_callback=None, log_callback=None):
 
 def run_min_conflicts(map_manager, num_towers=18, max_steps=100, update_ui_callback=None, log_callback=None):
     """
-    Main function to run Min-Conflicts algorithm from the GUI thread.
+    Hàm chính chạy giải thuật Min-Conflicts CSP khởi chạy từ giao diện GUI.
+    - Khởi tạo 18 biến tháp (T0 -> T17).
+    - Định nghĩa miền giá trị là tất cả ô không phải Start/Goal.
+    - Sau khi tìm được cấu hình không chặn đường đi hợp lệ, gán ngẫu nhiên loại tháp (Basic, Ice, Fire)
+      để tăng tính đa dạng mỹ thuật cho mê cung tháp.
     """
     if log_callback:
         log_callback("Khởi tạo cấu hình tháp ngẫu nhiên ban đầu cho CSP Min-Conflicts...")
@@ -135,7 +152,7 @@ def run_min_conflicts(map_manager, num_towers=18, max_steps=100, update_ui_callb
     
     final_assignment = min_conflicts(csp, max_steps, update_ui_callback, log_callback)
     
-    # Assign diverse tower types at the end for aesthetic diversity
+    # Đa dạng hóa các loại tháp (Basic, Ice, Fire) ở kết quả cuối cùng để tăng tính trực quan
     types = ["Basic", "Ice", "Fire"]
     map_manager.reset()
     for var, val in final_assignment.items():

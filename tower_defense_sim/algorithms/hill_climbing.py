@@ -3,8 +3,8 @@ import path_step_monitor
 
 def steepest_ascent_hill_climbing(start: tuple, goal: tuple, grid) -> list:
     """
-    Steepest Ascent Hill Climbing with memory (visited_cells) to bypass local maxima.
-    Returns: a path as a list of coordinates, or None if goal is not reachable.
+    Hàm leo đồi dốc đứng (Steepest Ascent Hill Climbing) tiêu chuẩn.
+    Sử dụng thêm bộ nhớ (visited_cells) làm kỹ thuật tránh rơi vào vòng lặp vô hạn ở cực đại cục bộ.
     """
     visited_cells = {start}
     path = [start]
@@ -27,7 +27,7 @@ def steepest_ascent_hill_climbing(start: tuple, goal: tuple, grid) -> list:
         if not neighbors:
             break
             
-        # Find neighbor with minimal Manhattan distance to goal
+        # Tìm ô lân cận có khoảng cách Manhattan tới đích ngắn nhất
         best_neighbor = min(neighbors, key=lambda n: abs(n[0] - goal[0]) + abs(n[1] - goal[1]))
         
         current = best_neighbor
@@ -40,7 +40,13 @@ def steepest_ascent_hill_climbing(start: tuple, goal: tuple, grid) -> list:
 
 def solve(start: tuple, goal: tuple, grid, delay=0.0) -> list:
     """
-    Solves pathfinding using Steepest Ascent Hill Climbing with step logging for GUI visualization.
+    Giải thuật Tìm kiếm Leo đồi dốc đứng (Steepest Ascent Hill Climbing).
+    - Tại mỗi bước, thuật toán đánh giá tất cả các ô hàng xóm lân cận và luôn di chuyển 
+      đến ô cải thiện giá trị tốt nhất (khoảng cách Manhattan tới đích nhỏ nhất).
+    - Hạn chế: Dễ bị kẹt tại "Cực đại cục bộ" (Local Maxima - nơi tất cả các hàng xóm đều tệ hơn ô hiện tại, 
+      nhưng vẫn chưa phải là đích).
+    - Giải pháp tích hợp: Sử dụng danh sách `visited_cells` để không quay lại ô cũ, cho phép đi tiếp 
+      sang ô lân cận tốt nhất tiếp theo ngay cả khi nó không tốt hơn ô hiện tại (leo qua sườn đồi).
     """
     path_step_monitor.log_step(f"Khởi chạy Steepest Ascent Hill Climbing từ {start} đến {goal}")
     
@@ -59,6 +65,7 @@ def solve(start: tuple, goal: tuple, grid, delay=0.0) -> list:
         if delay > 0:
             time.sleep(delay)
             
+        # Lấy danh sách hàng xóm hợp lệ 4 hướng xung quanh ô hiện tại
         directions = [(0, -1), (0, 1), (-1, 0), (1, 0)]
         neighbors = []
         for dx, dy in directions:
@@ -66,17 +73,20 @@ def solve(start: tuple, goal: tuple, grid, delay=0.0) -> list:
             if grid.is_valid_coord(nx, ny) and not grid.is_obstacle(nx, ny) and (nx, ny) not in visited_cells:
                 neighbors.append((nx, ny))
                 
+        # Nếu không còn ô lân cận trống nào chưa đi qua, kết thúc tìm kiếm
         if not neighbors:
             path_step_monitor.log_step(f"Cực đại cục bộ không còn lối đi lân cận trống tại {current}!")
             break
             
-        # Sort neighbors by Manhattan distance to Goal
+        # Sắp xếp các ô lân cận theo thứ tự khoảng cách Manhattan tới đích tăng dần
         neighbors.sort(key=lambda n: abs(n[0] - goal[0]) + abs(n[1] - goal[1]))
-        best_neighbor = neighbors[0]
+        best_neighbor = neighbors[0] # Chọn ô lân cận tốt nhất
         
         curr_dist = abs(current[0] - goal[0]) + abs(current[1] - goal[1])
         best_dist = abs(best_neighbor[0] - goal[0]) + abs(best_neighbor[1] - goal[1])
         
+        # Nếu khoảng cách của ô lân cận tốt nhất vẫn lớn hơn hoặc bằng ô hiện tại,
+        # nghĩa là chúng ta đang ở cực đại cục bộ (hoặc vùng phẳng phẳng).
         if best_dist >= curr_dist:
             path_step_monitor.log_step(f"Rơi vào cực đại cục bộ tại {current} (d={curr_dist}). Đi tiếp ô lân cận tốt nhất tiếp theo {best_neighbor} (d={best_dist}).")
         else:
@@ -85,8 +95,11 @@ def solve(start: tuple, goal: tuple, grid, delay=0.0) -> list:
         current = best_neighbor
         visited_cells.add(current)
         path.append(current)
+        
+        # Cập nhật trạng thái hiển thị trên giao diện
         path_step_monitor.log_node_state(current[0], current[1], "open")
         
+    # Kiểm tra xem có thực sự dừng ở đích hay không
     if path[-1] == goal:
         path_step_monitor.log_step(f"Hill Climbing đã tìm thấy đích! Độ dài: {len(path)}")
         for px, py in path:

@@ -4,36 +4,41 @@ import path_step_monitor
 
 def solve(start, goal, map_manager, delay=0.0):
     """
-    Solves pathfinding using Expectimax Search with Priority Queue.
-    Models path steps as Chance Nodes (accounting for expected damage and freeze probabilities)
-    to find the globally optimal path that minimizes total expected HP loss to reach the goal.
+    Giải thuật Tìm kiếm Expectimax kết hợp Hàng đợi ưu tiên.
+    - Khác với Minimax giả định đối thủ luôn đi nước đi tối ưu nhất để hại ta, 
+      Expectimax mô hình hóa các tình huống mang tính ngẫu nhiên của môi trường thông qua Nút cơ hội (Chance Nodes).
+    - Ở đây, tháp Băng (Ice Tower) gây ra hiệu ứng đóng băng ngẫu nhiên (chậm chân). 
+      Khi bị làm chậm, quái vật sẽ ở lâu hơn trong tầm bắn và nhận nhiều sát thương hơn.
+    - Mục tiêu: Tìm kiếm đường đi có tổng sát thương kỳ vọng (Expected Damage) nhỏ nhất
+      (tương đương lượng máu HP sống sót về đích là lớn nhất).
     """
     path_step_monitor.log_step(f"Khởi chạy EXPECTIMAX (Tối ưu hóa né sát thương - Máu tốn ít nhất) từ {start} đến {goal}")
     
-    # Priority Queue stores tuples: (priority_score, accumulated_expected_damage, distance_to_goal, current_pos, path)
-    # Primary sorting by accumulated_expected_damage ensures we explore paths with the least HP loss first.
+    # Hàng đợi ưu tiên lưu các phần tử: (priority_score, accumulated_expected_damage, distance_to_goal, current_pos, path)
+    # Sắp xếp ưu tiên theo tổng sát thương tích lũy để luôn duyệt đường đi an toàn nhất trước.
     start_h = abs(start[0] - goal[0]) + abs(start[1] - goal[1])
     pq = [(start_h * 0.05, 0.0, start_h, start, [start])]
     
-    # Tracks minimum accumulated expected damage to reach each cell
+    # Từ điển theo dõi lượng sát thương tối thiểu tích lũy để tới được từng ô
     min_damage_to_node = {start: 0.0}
     visited_nodes = set()
     
     while pq:
+        # Lấy nút có điểm ưu tiên thấp nhất (tốt nhất) ra khỏi Heap
         p_score, acc_damage, h_dist, curr, path = heapq.heappop(pq)
         
         if curr in visited_nodes:
             continue
         visited_nodes.add(curr)
         
-        # Visualization logging
+        # Trực quan hóa nút duyệt trên GUI
         if curr != start and curr != goal:
             path_step_monitor.log_node_state(curr[0], curr[1], "closed")
             if delay > 0:
                 time.sleep(delay)
                 
+        # Khi chạm tới đích, tính toán và in kết quả lượng máu sống sót kỳ vọng
         if curr == goal:
-            # Reached goal with minimal expected damage!
             remaining_hp = max(0.0, 100.0 - acc_damage)
             path_step_monitor.log_step(f"Expectimax: Tìm thấy đường đi tốn ít máu nhất! Dài {len(path)} ô | Sát thương kỳ vọng: {acc_damage:.1f} | HP còn lại: {remaining_hp:.1f}/100")
             
@@ -50,37 +55,42 @@ def solve(start, goal, map_manager, delay=0.0):
                 continue
                 
             nx, ny = nxt
+            # Lấy sát thương cơ bản và tỷ lệ đóng băng của tháp tại ô hàng xóm này
             base_dmg = map_manager.get_expected_damage(nx, ny)
             freeze_prob = map_manager.get_freeze_probability(nx, ny)
             
-            # Chance Node evaluation at step (nx, ny):
-            # 30% chance slowed (double damage) vs 70% normal (1x damage) if ice tower nearby
+            # --- ĐÁNH GIÁ NÚT CƠ HỘI (CHANCE NODE EVALUATION) ---
+            # Công thức sát thương kỳ vọng tại một ô:
+            # Sát thương kỳ vọng = Sát thương cơ bản * (1.0 + Tỷ lệ đóng băng)
+            # Tỷ lệ đóng băng càng cao làm quái đi chậm, tăng số lượt bị bắn lên gấp đôi.
             expected_step_dmg = base_dmg * (1.0 + freeze_prob)
             
-            # Accumulated damage + small step cost
+            # Sát thương tích lũy mới (cộng thêm một chi phí bước đi rất nhỏ 0.001 để ưu tiên đường ngắn hơn khi bằng sát thương)
             new_acc_damage = acc_damage + expected_step_dmg + 0.001
             
+            # Cập nhật nếu tìm thấy đường đi tới ô 'nxt' có tổng sát thương kỳ vọng nhỏ hơn
             if nxt not in min_damage_to_node or new_acc_damage < min_damage_to_node[nxt]:
                 min_damage_to_node[nxt] = new_acc_damage
                 nxt_h = abs(nx - goal[0]) + abs(ny - goal[1])
-                # Priority score combines damage minimization with directional progress towards goal
+                
+                # Điểm số ưu tiên kết hợp tối thiểu hóa sát thương và hướng tiến dần về đích
                 priority_score = new_acc_damage + nxt_h * 0.05
                 heapq.heappush(pq, (priority_score, new_acc_damage, nxt_h, nxt, path + [nxt]))
                 
                 if nxt != goal:
                     path_step_monitor.log_node_state(nx, ny, "open")
-
+                    
     path_step_monitor.log_step("Expectimax: Không tìm thấy đường đi tới đích!")
     return None
 
 
 def analyze_map_risk(map_manager):
     """
-    Phân tích rủi ro bản đồ bằng cách duyệt qua tất cả các ô có thể đi qua (walkable cells) trên lưới 20x20.
-    Mỗi ô đóng vai trò là một Chance Node để tính toán điểm đe dọa (threat score):
+    Phân tích rủi ro bản đồ bằng cách duyệt qua tất cả các ô có thể đi qua (walkable cells).
+    Mỗi ô đóng vai trò là một Nút cơ hội để tính toán điểm đe dọa (threat score):
     threat_score = expected_damage * (1.0 + freeze_probability)
     
-    Trả về dictionary: {"hotspot": (x, y), "safest": (x, y), "max_threat": score}
+    Trả về từ điển chứa tọa độ điểm nóng nguy hiểm nhất, nơi an toàn nhất, và điểm đe dọa cực đại.
     """
     max_threat = -1.0
     min_threat = float('inf')
@@ -97,10 +107,12 @@ def analyze_map_risk(map_manager):
                 freeze_prob = map_manager.get_freeze_probability(x, y)
                 threat_score = exp_damage * (1.0 + freeze_prob)
 
+                # Tìm ô có mức đe dọa cao nhất (Hotspot)
                 if threat_score > max_threat or hotspot is None:
                     max_threat = threat_score
                     hotspot = (x, y)
 
+                # Tìm ô có mức đe dọa thấp nhất (Safest)
                 if threat_score < min_threat or safest is None:
                     min_threat = threat_score
                     safest = (x, y)
@@ -128,9 +140,9 @@ def analyze_map_risk(map_manager):
 
 def select_best_path_from_candidates(candidate_paths, map_manager):
     """
-    Evaluates a set of candidate paths (generated by Backtracking, AND-OR, etc.) 
-    using Expectimax Chance Node modeling and selects the path that minimizes total expected HP loss.
-    Returns: (best_path, min_expected_damage, remaining_hp)
+    Đánh giá một danh sách các đường đi khả thi (sinh ra bởi các giải thuật khác)
+    bằng cách áp dụng mô hình Nút cơ hội Expectimax để chọn ra đường đi tối ưu nhất (ít mất máu nhất).
+    Trả về: (đường_đi_tối_ưu, sát_thương_kỳ_vọng, hp_còn_lại_dự_kiến, chỉ_số_đường_đi)
     """
     if not candidate_paths:
         return None, 0.0, 0.0
@@ -150,7 +162,7 @@ def select_best_path_from_candidates(candidate_paths, map_manager):
             base_dmg = map_manager.get_expected_damage(px, py)
             freeze_prob = map_manager.get_freeze_probability(px, py)
             expected_step_dmg = base_dmg * (1.0 + freeze_prob)
-            acc_damage += expected_step_dmg + 0.001  # Small tie-breaker cost
+            acc_damage += expected_step_dmg + 0.001  # Chi phí bước đi nhỏ làm tiêu chí phá vỡ thế cân bằng
 
         remaining_hp = max(0.0, 100.0 - acc_damage)
 
@@ -167,4 +179,3 @@ def select_best_path_from_candidates(candidate_paths, map_manager):
         )
 
     return best_path, min_expected_damage, best_hp, best_index
-
