@@ -220,7 +220,7 @@ class TowerDefenseGUI:
         self.btn_minimax_simulate = self.create_styled_button(ctrl_frame, "AI Sinh Quái (Minimax)", self.start_minimax_enemy_simulation, "#ec4899", "#db2777")
         self.btn_minimax_simulate.pack(fill=tk.X, padx=15, pady=3)
         
-        self.btn_sa = self.create_styled_button(ctrl_frame, "Tự Động Xếp Trụ (SA)", self.start_sa_thread, "#8b5cf6", "#7c3aed")
+        self.btn_sa = self.create_styled_button(ctrl_frame, "Xếp Trụ Ngẫu Nhiên", self.random_place_towers, "#8b5cf6", "#7c3aed")
         self.btn_sa.pack(fill=tk.X, padx=15, pady=3)
         
         self.btn_mc = self.create_styled_button(ctrl_frame, "Xếp Trụ (Min-Conflicts)", self.start_min_conflicts_thread, "#f59e0b", "#d97706")
@@ -578,42 +578,39 @@ class TowerDefenseGUI:
         except Exception as e:
             self.ui_queue.put(('error', str(e)))
 
-    def start_sa_thread(self):
-        """Spawns background thread to run Simulated Annealing layout optimization."""
+    def random_place_towers(self):
+        """Randomly places 18 towers of random types on the grid."""
         if self.is_simulating:
             self.write_to_log("⚠️ Vui lòng chờ mô phỏng kẻ địch chạy xong!\n")
             return
             
         self.clear_search_visuals()
-        self.set_led_color("#f59e0b")
-        self.status_lbl.config(text="Trạng thái: Đang chạy Simulated Annealing...")
+        self.map_manager.reset()
         
-        # Clear log area
-        self.log_area.config(state=tk.NORMAL)
-        self.log_area.delete("1.0", tk.END)
-        self.log_area.config(state=tk.DISABLED)
+        types = ["Basic", "Ice", "Fire"]
         
-        self.set_buttons_state(tk.DISABLED)
+        # Collect all empty coordinates (excluding start and goal)
+        empty_cells = []
+        for x in range(self.map_manager.width):
+            for y in range(self.map_manager.height):
+                if (x, y) != self.map_manager.start and (x, y) != self.map_manager.goal:
+                    empty_cells.append((x, y))
+                    
+        import random
+        random.shuffle(empty_cells)
         
-        def run_sa_bg():
-            from algorithms import simulated_annealing
-            import path_step_monitor
-            try:
-                path_step_monitor.set_silenced(True)
-                simulated_annealing.run_annealing(
-                    self.map_manager,
-                    num_towers=18,
-                    steps=80,
-                    update_ui_callback=lambda: self.ui_queue.put(('map_update', None)),
-                    log_callback=lambda text: self.ui_queue.put(('log', text))
-                )
-                self.ui_queue.put(('sa_completed', None))
-            except Exception as e:
-                self.ui_queue.put(('error', str(e)))
-            finally:
-                path_step_monitor.set_silenced(False)
+        num_towers = 18
+        placed_count = 0
+        for i in range(min(num_towers, len(empty_cells))):
+            rx, ry = empty_cells[i]
+            t_type = random.choice(types)
+            if self.map_manager.add_tower(rx, ry, t_type):
+                placed_count += 1
                 
-        threading.Thread(target=run_sa_bg, daemon=True).start()
+        self.write_to_log(f"🎲 Đã xếp ngẫu nhiên {placed_count} trụ (loại tháp và vị trí hoàn toàn ngẫu nhiên)!\n")
+        self.status_lbl.config(text=f"Trạng thái: Đã xếp ngẫu nhiên {placed_count} trụ.")
+        self.set_led_color("#10b981")
+        self.redraw_grid()
 
     def start_min_conflicts_thread(self):
         """Spawns background thread to run Min-Conflicts CSP layout optimization."""
@@ -642,7 +639,7 @@ class TowerDefenseGUI:
                     num_towers=18,
                     max_steps=100,
                     update_ui_callback=lambda: self.ui_queue.put(('map_update', None)),
-                    log_callback=lambda text: self.ui_queue.put(('log', text))
+                    log_callback=lambda text: self.ui_queue.put(('log', text + "\n"))
                 )
                 self.ui_queue.put(('mc_completed', None))
             except Exception as e:
@@ -1121,9 +1118,13 @@ class TowerDefenseGUI:
         # Process a batch of items to keep UI responsive
         batch_limit = 120
         count = 0
+        needs_redraw = False
         
-        while not self.ui_queue.empty() and count < batch_limit:
-            item_type, data = self.ui_queue.get()
+        while count < batch_limit:
+            try:
+                item_type, data = self.ui_queue.get_nowait()
+            except queue.Empty:
+                break
             count += 1
             
             if item_type == 'log':
@@ -1142,7 +1143,7 @@ class TowerDefenseGUI:
                     if coord in self.search_node_states:
                         del self.search_node_states[coord]
                         
-                self.redraw_grid()
+                needs_redraw = True
                 
             elif item_type == 'path_completed':
                 path = data
@@ -1170,7 +1171,7 @@ class TowerDefenseGUI:
                     self.status_lbl.config(text="Trạng thái: Đường đi không khả thi!")
                     self.set_led_color("#ef4444")
                     
-                self.redraw_grid()
+                needs_redraw = True
                 
             elif item_type == 'best_path_select_completed':
                 best_path, min_dmg, remaining_hp, best_idx, total_paths = data
@@ -1185,30 +1186,30 @@ class TowerDefenseGUI:
                     self.write_to_log(f"📊 Dự báo: Sát thương kỳ vọng: {min_dmg:.1f} | HP còn lại: {remaining_hp:.1f}/100\n")
                     self.write_to_log("🚀 Tự động kích hoạt mô phỏng quái di chuyển...\n")
                     
-                    self.redraw_grid()
+                    needs_redraw = True
                     self.start_enemy_simulation()
                 else:
                     self.current_path = []
                     self.status_lbl.config(text="Trạng thái: Không có đường đi khả thi!")
                     self.set_led_color("#ef4444")
-                    self.redraw_grid()
+                    needs_redraw = True
                     
             elif item_type == 'map_update':
-                self.redraw_grid()
+                needs_redraw = True
                 
             elif item_type == 'sa_completed':
                 self.set_buttons_state(tk.NORMAL)
                 self.write_to_log("✅ Đã tạo mê cung bằng Simulated Annealing xong!\n")
                 self.status_lbl.config(text="Trạng thái: Hoàn tất Simulated Annealing")
                 self.set_led_color("#10b981")
-                self.redraw_grid()
+                needs_redraw = True
                 
             elif item_type == 'mc_completed':
                 self.set_buttons_state(tk.NORMAL)
                 self.write_to_log("✅ Đã tối ưu hóa vị trí tháp bằng Min-Conflicts xong!\n")
                 self.status_lbl.config(text="Trạng thái: Hoàn tất Min-Conflicts")
                 self.set_led_color("#10b981")
-                self.redraw_grid()
+                needs_redraw = True
                 
             elif item_type == 'all_paths_completed':
                 all_paths = data
@@ -1240,7 +1241,7 @@ class TowerDefenseGUI:
                     self.current_path = []
                     if hasattr(self, 'all_found_paths') and self.all_found_paths is not None:
                         self.all_found_paths.clear()
-                self.redraw_grid()
+                needs_redraw = True
                 
             elif item_type == 'error':
                 err_msg = data
@@ -1250,5 +1251,8 @@ class TowerDefenseGUI:
                 self.status_lbl.config(text="Trạng thái: Xảy ra lỗi!")
                 self.set_led_color("#ef4444")
                 
+        if needs_redraw:
+            self.redraw_grid()
+            
         # Re-schedule check
         self.root.after(30, self.process_ui_queue)
