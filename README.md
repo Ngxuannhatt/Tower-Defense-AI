@@ -608,3 +608,17 @@ Mô phỏng cuộc đấu trí giữa hai tác nhân có lợi ích trái ngư�
    * **Chạy giải thuật tìm đường:** Chọn một trong các thuật toán tìm đường trên menu GUI, nhấn nút **Run Pathfinder** để xem Agent tìm đường về đích.
    * **Cấu hình tự động CSP:** Chọn thuật toán **Min-Conflicts (CSP)** trên bảng điều khiển để tự động sinh và sắp đặt vị trí tháp phòng thủ tối ưu mà không chặn đường đi của Agent.
    * **Xem logs:** Theo dõi luồng hoạt động chi tiết ở khung văn bản Logs bên góc phải màn hình để hiểu cách thức các node được mở rộng và chi phí tính toán tương ứng.
+#### DEMO:
+## Minh họa cách hoạt động của các nhóm thuật toán
+### Nhóm 1: Uninformed Search (Tìm kiếm không thông tin / Tìm kiếm mù)
+![BFS](gifs/BFS.gif)
+### Nhóm 2: Informed Search (Tìm kiếm có thông tin / Heuristic)
+![Astar](gifs/Astar.gif)
+### Nhóm 3: Local Search (Tìm kiếm cục bộ)
+![local beam](gifs/local%20beam.gif)
+### Nhóm 4: Search in Complex Environments (Tìm kiếm trong môi trường phức tạp)
+![belief  state](gifs/belief%20state.gif)
+### Nhóm 5: Constraint Satisfaction Problems (CSP - Bài toán thỏa mãn ràng buộc)
+![forward checking](gifs/forward%20checking.gif)
+### Nhóm 6: Adversarial Search (Tìm kiếm đối kháng / Trò chơi)
+![alpha beta](gifs/alpha%20beta.gif)
