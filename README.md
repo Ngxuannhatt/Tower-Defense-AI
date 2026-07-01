@@ -621,4 +621,4 @@ Mô phỏng cuộc đấu trí giữa hai tác nhân có lợi ích trái ngư�
 ### Nhóm 5: Constraint Satisfaction Problems (CSP - Bài toán thỏa mãn ràng buộc)
 ![forward checking](gifs/forward%20checking.gif)
 ### Nhóm 6: Adversarial Search (Tìm kiếm đối kháng / Trò chơi)
-![alpha beta](gifs/alpha%20beta.gif)
+![minimax](gifs/minimax.gif)
